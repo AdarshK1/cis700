@@ -4,10 +4,9 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 import numpy as np
-# import wandb
+import wandb
 
 # wandb.init(project="cis700")
-
 
 
 class Net(nn.module):
