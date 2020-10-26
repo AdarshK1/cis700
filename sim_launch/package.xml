@@ -53,6 +53,11 @@
   <build_export_depend>rospy</build_export_depend>
   <exec_depend>rospy</exec_depend>
 
+  <depend>move_base </depend>
+  <depend>iamge_proc </depend>
+  <depend>interactive_marker_twist_server </depend>
+  <depend>global_planner </depend>
+
 
   <!-- The export tag contains other, unspecified, tags -->
   <export>
