@@ -1,0 +1,89 @@
+<?xml version="1.0"?>
+<launch>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="gt_pub" args="1 0 0 0 0 0 1 husky/TrueState husky/base"/>
+  <node pkg="tf2_ros" type="static_transform_publisher" name="odom_pub" args="0 0 0 0 0 0 husky/odom world"/>
+
+  <node pkg="nodelet" type="nodelet" name="nodelet_manager" args="manager" />
+
+  <node pkg="nodelet" type="nodelet" name="nodelet1"
+        args="load depth_image_proc/point_cloud_xyz nodelet_manager">
+    <remap from="camera_info" to="/husky/depth_camera/camera_info"/>
+    <remap from="image_rect" to="/husky/depth_camera/image_raw"/>
+    <remap from="points" to="/husky/depth_camera/points"/>
+  </node>
+
+  <node pkg="octomap_server" type="octomap_server_node" name="octomap_server" output="screen">
+    <remap from="/cloud_in" to="/husky/depth_camera/points"/>
+    <remap from="/projected_map" to="/map"/>
+    <param name="frame_id" value="world"/>
+    <param name="resolution" value="0.2"/>
+    <param name="occupancy_min_z" value="0.5"/>
+    <param name="occupancy_max_z" value="2"/>
+  </node>
+
+  <arg name="odom_frame_id" default="odom"/>
+  <arg name="base_frame_id" default="base_link"/>
+  <arg name="global_frame_id" default="world"/>
+  <arg name="odom_topic" default="husky/odom" />
+  <arg name="ns" default="husky"/>
+  <arg name="pointcloud_topic" default="/husky/depth_camera/points"/>
+
+  <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+    <rosparam file="$(find sim_launch)/params/costmap_common_params.yaml" command="load" ns="global_costmap"/>
+    <rosparam file="$(find sim_launch)/params/costmap_common_params.yaml" command="load" ns="local_costmap"/>
+    <rosparam file="$(find sim_launch)/params/odom_nav_params/local_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find sim_launch)/params/odom_nav_params/global_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find sim_launch)/params/move_base_params.yaml" command="load"/>
+    <rosparam file="$(find sim_launch)/params/base_local_planner_params.yaml" command="load"/>
+    <rosparam file="$(find sim_launch)/params/global_planner_params.yaml" command="load"/>
+
+    <!-- Reset frame_id parameters using user input data -->
+    <param name="base_global_planner" type="string" value="global_planner/GlobalPlanner" />
+    <param name="base_local_planner" value="base_local_planner/TrajectoryPlannerROS" />
+    <param name="global_costmap/global_frame" value="$(arg global_frame_id)"/>
+    <param name="global_costmap/robot_base_frame" value="$(arg ns)/$(arg base_frame_id)"/>
+    <param name="local_costmap/global_frame" value="$(arg ns)/$(arg odom_frame_id)"/>
+    <param name="local_costmap/robot_base_frame" value="$(arg ns)/$(arg base_frame_id)"/>
+    <param name="TrajectoryPlannerROS/global_frame_id" value="$(arg ns)/$(arg odom_frame_id)"/>
+
+    <remap from="odom" to="$(arg odom_topic)"/>
+    <remap from="scan" to="$(arg pointcloud_topic)"/>
+    <remap from="cmd_vel" to="/husky/cmd_vel"/>
+  </node>
+
+<arg name="gt_ns" default="ground_truth_planning"/>
+<group ns="$(arg gt_ns)">
+
+    <node pkg="octomap_server" type="octomap_server_node" name="octomap_server_gt" output="screen">
+    <param name="map_file" value="$(find sim_launch)/ground_truth_octomap/exported_unity_map.bt"/>
+      <remap from="projected_map" to="map"/>
+      <param name="frame_id" value="world"/>
+    </node>
+
+    <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
+    <rosparam file="$(find sim_launch)/params/costmap_common_params.yaml" command="load" ns="global_costmap"/>
+    <rosparam file="$(find sim_launch)/params/costmap_common_params.yaml" command="load" ns="local_costmap"/>
+    <rosparam file="$(find sim_launch)/params/odom_nav_params/local_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find sim_launch)/params/odom_nav_params/global_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find sim_launch)/params/move_base_params.yaml" command="load"/>
+    <rosparam file="$(find sim_launch)/params/base_local_planner_params.yaml" command="load"/>
+    <rosparam file="$(find sim_launch)/params/global_planner_params.yaml" command="load"/>
+
+    <!-- Reset frame_id parameters using user input data -->
+    <param name="base_global_planner" type="string" value="global_planner/GlobalPlanner" />
+    <param name="base_local_planner" value="base_local_planner/TrajectoryPlannerROS" />
+    <param name="global_costmap/global_frame" value="$(arg global_frame_id)"/>
+    <param name="global_costmap/robot_base_frame" value="$(arg ns)/$(arg base_frame_id)"/>
+    <param name="local_costmap/global_frame" value="$(arg ns)/$(arg odom_frame_id)"/>
+    <param name="local_costmap/robot_base_frame" value="$(arg ns)/$(arg base_frame_id)"/>
+    <param name="TrajectoryPlannerROS/global_frame_id" value="$(arg ns)/$(arg odom_frame_id)"/>
+    <!-- <param name="static_map" value="true"/> -->
+
+      <remap from="odom" to="$(arg odom_topic)"/>
+      <remap from="scan" to="$(arg pointcloud_topic)"/>
+      <remap from="move_base/goal" to="/move_base/goal"/>
+      <!-- <remap from="cmd_vel" to="/husky/cmd_vel"/> -->
+    </node>
+  </group>
+
+</launch>
