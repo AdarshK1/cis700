@@ -4,6 +4,8 @@ import glob
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 from PIL import Image
+import copy
+import cv2
 
 
 class CIS700Dataset(Dataset):
@@ -82,7 +84,7 @@ class CIS700Dataset(Dataset):
                     "resolution": map_arr[-2],
                     "width": int(map_arr[-1])}
 
-        print(map_meta["height"], map_meta["width"], map_meta["resolution"])
+        # print(map_meta["height"], map_meta["width"], map_meta["resolution"])
         print("Got a map at {} res of hw ({},{}) located @ X:{}, Y:{}, Z:{}".format(map_meta["resolution"],
                                                                                     map_meta["height"],
                                                                                     map_meta["width"],
@@ -90,14 +92,47 @@ class CIS700Dataset(Dataset):
                                                                                     map_meta["origin_position_y"],
                                                                                     map_meta["origin_position_z"]))
         map_part = map_arr[:len(map_arr) - 10]
-        # print(len(map_part))
         map_part = np.reshape(map_part, (map_meta["height"], map_meta["width"]))
-        # print(map_part.shape)
-        # print(map_part)
-        # img = Image.fromarray(map_part, "I")
-        # img.show()
 
         return map_part, map_meta
+
+    def annotate_map(self, map_arr, meta, path, goal, pose):
+        map_arr_copy = copy.deepcopy(map_arr)
+        map_arr_copy -= np.min(map_arr_copy) 
+        map_arr_copy *= (255.0 / np.max(map_arr_copy))
+
+        annotation_channel = np.zeros(map_arr_copy.shape)
+
+        # mark pose
+        pose_map_coords_x = int((pose[0] - meta["origin_position_x"]) / meta["resolution"])
+        pose_map_coords_y = int((pose[1] - meta["origin_position_y"]) / meta["resolution"])
+
+        annotation_channel[pose_map_coords_y, pose_map_coords_x] = 100
+        annotation_channel = cv2.circle(annotation_channel, (pose_map_coords_y, pose_map_coords_x), 5, (0, 255, 0))
+
+        # mark goal
+        goal_map_coords_x = int((goal[0] - meta["origin_position_x"]) / meta["resolution"])
+        goal_map_coords_y = int((goal[1] - meta["origin_position_y"]) / meta["resolution"])
+
+        annotation_channel[goal_map_coords_y, goal_map_coords_x] = 150
+        annotation_channel = cv2.circle(annotation_channel, (goal_map_coords_y, goal_map_coords_x), 5, (0, 255, 0))
+
+        # mark path
+        # print(path)
+        for pose in path:
+            path_map_coords_x = int((pose[0] - meta["origin_position_x"]) / meta["resolution"])
+            path_map_coords_y = int((pose[1] - meta["origin_position_y"]) / meta["resolution"])
+
+            annotation_channel[path_map_coords_y, path_map_coords_x] = 200
+            annotation_channel = cv2.circle(annotation_channel, (path_map_coords_y, path_map_coords_x), 5, (0, 255, 0))
+
+        concated = np.dstack([map_arr_copy, annotation_channel, annotation_channel])
+        # print("concated shape", concated.shape)
+        cv2.imshow("test", concated)
+        cv2.waitKey(10000)
+        # img = Image.fromarray(map_arr_copy, "I")
+        # img = Image.fromarray(concated, "RGB")
+        # img.show()
 
 
     def __len__(self):
@@ -116,10 +151,16 @@ class CIS700Dataset(Dataset):
             for topic_dir in self.topic_dirs:
                 indices[topic_dir] = (max([idx for idx, (k, v) in enumerate(self.data_holder[topic_dir].items()) if k < rand_idx // self.samples_per_second]))
                 vals[topic_dir] = (self.data_list_holder[topic_dir][indices[topic_dir]][1])
-            print(rand_idx, indices)
+            # print(rand_idx, indices)
             # print(vals)
             # print(vals["map"].shape)
             map_img, map_meta = self.process_map(vals["map"])
+
+            self.annotate_map(map_img,
+                              map_meta,
+                              vals["move_base_GlobalPlanner_plan"],
+                              vals["move_base_simple_goal"],
+                              vals["unity_ros_husky_TrueState_odom"])
 
 
 if __name__ == "__main__":
