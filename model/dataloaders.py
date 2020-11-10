@@ -12,7 +12,7 @@ class CIS700Dataset(Dataset):
 
     def __init__(self, batch=1):
 
-        self.data_dir = "/home/adarsh/ros-workspaces/cis700_workspace/src/learned_planning_pipeline/bag_harvester/cis700_data_2/"
+        self.data_dir = "/home/adarsh/ros-workspaces/cis700_workspace/src/learned_planning_pipeline/bag_harvester/cis700_data_gt/"
 
         self.topic_dirs = ["husky_camera_image_raw",
                            "husky_semantic_camera_image_raw",
@@ -20,7 +20,8 @@ class CIS700Dataset(Dataset):
                            "move_base_simple_goal",
                            "move_base_GlobalPlanner_plan",
                            "move_base_TrajectoryPlannerROS_local_plan",
-                           "unity_ros_husky_TrueState_odom"]
+                           "unity_ros_husky_TrueState_odom",
+                           "ground_truth_planning_move_base_GlobalPlanner_plan"]
 
         self.data_holder = {}
         self.data_list_holder = {}
@@ -98,42 +99,46 @@ class CIS700Dataset(Dataset):
 
     def annotate_map(self, map_arr, meta, path, goal, pose):
         map_arr_copy = copy.deepcopy(map_arr)
-        map_arr_copy -= np.min(map_arr_copy) 
+        map_arr_copy -= np.min(map_arr_copy)
         map_arr_copy *= (255.0 / np.max(map_arr_copy))
 
-        annotation_channel = np.zeros(map_arr_copy.shape)
+        annotation_channel = np.full((map_arr_copy.shape[0], map_arr_copy.shape[1], 3), 100, np.uint8)
 
         # mark pose
-        pose_map_coords_x = int((pose[0] - meta["origin_position_x"]) / meta["resolution"])
-        pose_map_coords_y = int((pose[1] - meta["origin_position_y"]) / meta["resolution"])
+        if pose is not None:
+            pose_map_coords_x = int((pose[0] - meta["origin_position_x"]) / meta["resolution"])
+            pose_map_coords_y = int((pose[1] - meta["origin_position_y"]) / meta["resolution"])
 
-        annotation_channel[pose_map_coords_y, pose_map_coords_x] = 100
-        annotation_channel = cv2.circle(annotation_channel, (pose_map_coords_y, pose_map_coords_x), 5, (0, 255, 0))
+            print("robot pose", pose[0], pose[1])
+            print("map origin", meta["origin_position_x"], meta["origin_position_y"])
+            print("converted", pose_map_coords_x, pose_map_coords_y)
+            annotation_channel = cv2.circle(annotation_channel, (pose_map_coords_x, pose_map_coords_y), 5, (255, 0, 0),
+                                            3)
+            # print(annotation_channel)
+            # cv2.imshow("test", annotation_channel)
+            # cv2.waitKey(10000)
 
         # mark goal
-        goal_map_coords_x = int((goal[0] - meta["origin_position_x"]) / meta["resolution"])
-        goal_map_coords_y = int((goal[1] - meta["origin_position_y"]) / meta["resolution"])
-
-        annotation_channel[goal_map_coords_y, goal_map_coords_x] = 150
-        annotation_channel = cv2.circle(annotation_channel, (goal_map_coords_y, goal_map_coords_x), 5, (0, 255, 0))
+        if goal is not None:
+            goal_map_coords_x = int((goal[0] - meta["origin_position_x"]) / meta["resolution"])
+            goal_map_coords_y = int((goal[1] - meta["origin_position_y"]) / meta["resolution"])
+            print("robot goal", goal[0], goal[1])
+            print("goal_converted", goal_map_coords_x, goal_map_coords_y)
+            annotation_channel = cv2.circle(annotation_channel, (goal_map_coords_x, goal_map_coords_y), 5, (0, 0, 255),
+                                            3)
 
         # mark path
-        # print(path)
-        for pose in path:
-            path_map_coords_x = int((pose[0] - meta["origin_position_x"]) / meta["resolution"])
-            path_map_coords_y = int((pose[1] - meta["origin_position_y"]) / meta["resolution"])
+        if path is not None:
+            for pose in path:
+                path_map_coords_x = int((pose[0] - meta["origin_position_x"]) / meta["resolution"])
+                path_map_coords_y = int((pose[1] - meta["origin_position_y"]) / meta["resolution"])
 
-            annotation_channel[path_map_coords_y, path_map_coords_x] = 200
-            annotation_channel = cv2.circle(annotation_channel, (path_map_coords_y, path_map_coords_x), 5, (0, 255, 0))
+                annotation_channel = cv2.circle(annotation_channel, (path_map_coords_x, path_map_coords_y), 1,
+                                                (255, 0, 255), 1)
 
-        concated = np.dstack([map_arr_copy, annotation_channel, annotation_channel])
-        # print("concated shape", concated.shape)
-        cv2.imshow("test", concated)
-        cv2.waitKey(10000)
-        # img = Image.fromarray(map_arr_copy, "I")
-        # img = Image.fromarray(concated, "RGB")
-        # img.show()
+        annotation_channel[:, :, 1] = map_arr_copy
 
+        return annotation_channel
 
     def __len__(self):
         return self.num_samples
@@ -141,7 +146,9 @@ class CIS700Dataset(Dataset):
     def __getitem__(self, idx):
 
         rand_indices = np.random.choice(self.items_left, self.batch_size) + self.skip_first_n_samples
-        inputs = []
+        inputs_annotated = []
+        inputs_rgb = []
+        inputs_semantic = []
         outputs = []
 
         for rand_idx in rand_indices:
@@ -149,20 +156,36 @@ class CIS700Dataset(Dataset):
             indices = {}
             vals = {}
             for topic_dir in self.topic_dirs:
-                indices[topic_dir] = (max([idx for idx, (k, v) in enumerate(self.data_holder[topic_dir].items()) if k < rand_idx // self.samples_per_second]))
+                indices[topic_dir] = (max([idx for idx, (k, v) in enumerate(self.data_holder[topic_dir].items()) if
+                                           k < rand_idx // self.samples_per_second]))
                 vals[topic_dir] = (self.data_list_holder[topic_dir][indices[topic_dir]][1])
-            # print(rand_idx, indices)
-            # print(vals)
-            # print(vals["map"].shape)
             map_img, map_meta = self.process_map(vals["map"])
 
-            self.annotate_map(map_img,
-                              map_meta,
-                              vals["move_base_GlobalPlanner_plan"],
-                              vals["move_base_simple_goal"],
-                              vals["unity_ros_husky_TrueState_odom"])
+            annotated = self.annotate_map(map_img,
+                                          map_meta,
+                                          vals["move_base_GlobalPlanner_plan"],
+                                          vals["move_base_simple_goal"],
+                                          vals["unity_ros_husky_TrueState_odom"])
+
+            annotated_gt = self.annotate_map(map_img,
+                                             map_meta,
+                                             vals["ground_truth_planning_move_base_GlobalPlanner_plan"],
+                                             None,
+                                             None)
+
+            inputs_annotated.append(annotated)
+            inputs_rgb.append(vals["husky_camera_image_raw"])
+            inputs_semantic.append(vals["husky_semantic_camera_image_raw"])
+            outputs.append(annotated_gt)
+
+        return np.array(inputs_annotated), np.array(inputs_rgb), np.array(inputs_semantic), np.array(outputs)
 
 
 if __name__ == "__main__":
     dset = CIS700Dataset()
-    print(dset.__getitem__(0))
+    annotated, rgb, semantic, out = dset.__getitem__(0)
+
+    print("annotated", annotated.shape)
+    print("rgb", rgb.shape)
+    print("semantic", semantic.shape)
+    print("out", out.shape)
