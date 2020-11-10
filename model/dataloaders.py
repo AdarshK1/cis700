@@ -3,9 +3,11 @@ import torch
 import glob
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
-from PIL import Image
 import copy
 import cv2
+
+#TODO(akulkarni) i realized this whole setup requires that the dataset is held in RAM...that kinda sucks
+# with big datasets so fix that sometime soon (should be doable just refactoring tbh)
 
 
 class CIS700Dataset(Dataset):
@@ -14,6 +16,7 @@ class CIS700Dataset(Dataset):
 
         self.data_dir = sub_dir
 
+        #TODO(akulkarni) make it read in the config used when parsing bags into npy arrays
         self.topic_dirs = ["husky_camera_image_raw",
                            "husky_semantic_camera_image_raw",
                            "map",
@@ -156,6 +159,7 @@ class CIS700Dataset(Dataset):
         inputs_semantic = []
         outputs = []
 
+        #TODO (akulkarni) comment this bs
         for rand_idx in rand_indices:
             self.items_left = np.delete(self.items_left, np.where(self.items_left == rand_idx))
             indices = {}
