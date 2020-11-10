@@ -65,7 +65,9 @@ class CIS700Dataset(Dataset):
         self.skip_last_n_seconds = 5
         self.skip_first_n_samples = 15
 
-        self.num_samples = (int(min(np.array(self.end_times))) - self.skip_last_n_seconds) * self.samples_per_second
+        self.actual_end_time = int(min(np.array(self.end_times)))
+        self.actual_time_length = self.actual_end_time - self.skip_last_n_seconds
+        self.num_samples = self.actual_time_length * self.samples_per_second
 
         self.batch_size = batch
 
@@ -165,8 +167,17 @@ class CIS700Dataset(Dataset):
             indices = {}
             vals = {}
             for topic_dir in self.topic_dirs:
-                indices[topic_dir] = (max([idx for idx, (k, v) in enumerate(self.data_holder[topic_dir].items()) if
-                                           k < rand_idx // self.samples_per_second]))
+                try:
+                    indices[topic_dir] = (max([idx for idx, (k, v) in enumerate(self.data_holder[topic_dir].items()) if
+                                               k < (rand_idx * self.actual_time_length / self.num_samples)]))
+                except ValueError:
+                    print(topic_dir,
+                          rand_idx,
+                          self.samples_per_second,
+                          self.num_samples,
+                          self.actual_time_length,
+                          (rand_idx * self.actual_time_length / self.num_samples))
+
                 vals[topic_dir] = (self.data_list_holder[topic_dir][indices[topic_dir]][1])
             map_img, map_meta = self.process_map(vals["map"])
 

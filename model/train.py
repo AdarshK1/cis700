@@ -10,7 +10,7 @@ from dataloaders import CIS700Dataset
 
 # eventually we can do sweeps with this setup
 hyperparameter_defaults = dict(
-    batch_size=20,
+    batch_size=64,
     learning_rate=0.0001,
     weight_decay=0.0001,
     epochs=150

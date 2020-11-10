@@ -55,3 +55,4 @@ CATKIN_IGNORE
 *.stl
 
 model/wandb/
+model/models/
