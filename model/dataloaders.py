@@ -10,9 +10,9 @@ import cv2
 
 class CIS700Dataset(Dataset):
 
-    def __init__(self, batch=1):
+    def __init__(self, batch=1, sub_dir="cis700_data_gt/"):
 
-        self.data_dir = "/home/adarsh/ros-workspaces/cis700_workspace/src/learned_planning_pipeline/bag_harvester/cis700_data_gt/"
+        self.data_dir = sub_dir
 
         self.topic_dirs = ["husky_camera_image_raw",
                            "husky_semantic_camera_image_raw",
@@ -73,7 +73,7 @@ class CIS700Dataset(Dataset):
     def reset_items_left(self):
         self.items_left = [i for i in range(self.num_samples)]
 
-    def process_map(self, map_arr):
+    def process_map(self, map_arr, verbose=False):
         map_meta = {"origin_position_x": map_arr[-10],
                     "origin_position_y": map_arr[-9],
                     "origin_position_z": map_arr[-8],
@@ -85,19 +85,19 @@ class CIS700Dataset(Dataset):
                     "resolution": map_arr[-2],
                     "width": int(map_arr[-1])}
 
-        # print(map_meta["height"], map_meta["width"], map_meta["resolution"])
-        print("Got a map at {} res of hw ({},{}) located @ X:{}, Y:{}, Z:{}".format(map_meta["resolution"],
-                                                                                    map_meta["height"],
-                                                                                    map_meta["width"],
-                                                                                    map_meta["origin_position_x"],
-                                                                                    map_meta["origin_position_y"],
-                                                                                    map_meta["origin_position_z"]))
+        if verbose:
+            print("Got a map at {} res of hw ({},{}) located @ X:{}, Y:{}, Z:{}".format(map_meta["resolution"],
+                                                                                        map_meta["height"],
+                                                                                        map_meta["width"],
+                                                                                        map_meta["origin_position_x"],
+                                                                                        map_meta["origin_position_y"],
+                                                                                        map_meta["origin_position_z"]))
         map_part = map_arr[:len(map_arr) - 10]
         map_part = np.reshape(map_part, (map_meta["height"], map_meta["width"]))
 
         return map_part, map_meta
 
-    def annotate_map(self, map_arr, meta, path, goal, pose):
+    def annotate_map(self, map_arr, meta, path, goal, pose, verbose=False):
         map_arr_copy = copy.deepcopy(map_arr)
         map_arr_copy -= np.min(map_arr_copy)
         map_arr_copy *= (255.0 / np.max(map_arr_copy))
@@ -109,9 +109,11 @@ class CIS700Dataset(Dataset):
             pose_map_coords_x = int((pose[0] - meta["origin_position_x"]) / meta["resolution"])
             pose_map_coords_y = int((pose[1] - meta["origin_position_y"]) / meta["resolution"])
 
-            print("robot pose", pose[0], pose[1])
-            print("map origin", meta["origin_position_x"], meta["origin_position_y"])
-            print("converted", pose_map_coords_x, pose_map_coords_y)
+            if verbose:
+                print("robot pose", pose[0], pose[1])
+                print("map origin", meta["origin_position_x"], meta["origin_position_y"])
+                print("converted", pose_map_coords_x, pose_map_coords_y)
+
             annotation_channel = cv2.circle(annotation_channel, (pose_map_coords_x, pose_map_coords_y), 5, (255, 0, 0),
                                             3)
             # print(annotation_channel)
@@ -122,8 +124,11 @@ class CIS700Dataset(Dataset):
         if goal is not None:
             goal_map_coords_x = int((goal[0] - meta["origin_position_x"]) / meta["resolution"])
             goal_map_coords_y = int((goal[1] - meta["origin_position_y"]) / meta["resolution"])
-            print("robot goal", goal[0], goal[1])
-            print("goal_converted", goal_map_coords_x, goal_map_coords_y)
+
+            if verbose:
+                print("robot goal", goal[0], goal[1])
+                print("goal_converted", goal_map_coords_x, goal_map_coords_y)
+
             annotation_channel = cv2.circle(annotation_channel, (goal_map_coords_x, goal_map_coords_y), 5, (0, 0, 255),
                                             3)
 
@@ -143,7 +148,7 @@ class CIS700Dataset(Dataset):
     def __len__(self):
         return self.num_samples
 
-    def __getitem__(self, idx):
+    def __getitem__(self):
 
         rand_indices = np.random.choice(self.items_left, self.batch_size) + self.skip_first_n_samples
         inputs_annotated = []
@@ -161,23 +166,61 @@ class CIS700Dataset(Dataset):
                 vals[topic_dir] = (self.data_list_holder[topic_dir][indices[topic_dir]][1])
             map_img, map_meta = self.process_map(vals["map"])
 
+            # annotate the input map with pose, goal and path
             annotated = self.annotate_map(map_img,
                                           map_meta,
                                           vals["move_base_GlobalPlanner_plan"],
                                           vals["move_base_simple_goal"],
                                           vals["unity_ros_husky_TrueState_odom"])
 
+            # annotate the the map with gt path
             annotated_gt = self.annotate_map(map_img,
                                              map_meta,
                                              vals["ground_truth_planning_move_base_GlobalPlanner_plan"],
                                              None,
                                              None)
 
+            # pad the rgb and semantic images
+            curr_rgb = vals["husky_camera_image_raw"]
+            curr_semantic = vals["husky_semantic_camera_image_raw"]
+
+            rgb_padded = np.zeros(annotated.shape)
+            rgb_padded[:curr_rgb.shape[0], :curr_rgb.shape[1], :] = curr_rgb
+            semantic_padded = np.zeros(annotated.shape)
+            semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
+
+            # Make em all channel first, normalize em from -1 to 1
+            annotated = np.moveaxis(annotated, 2, 0).astype('float64')
+            annotated -= np.min(annotated)
+            annotated *= 2/(np.max(annotated))
+            annotated -= 1
+            # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
+
+            rgb_padded = np.moveaxis(rgb_padded, 2, 0).astype('float64')
+            rgb_padded -= np.min(rgb_padded)
+            rgb_padded *= 2/(np.max(rgb_padded))
+            rgb_padded -= 1
+            # print("rgb_padded", rgb_padded.dtype, np.max(rgb_padded), np.min(rgb_padded))
+
+            semantic_padded = np.moveaxis(semantic_padded, 2, 0).astype('float64')
+            semantic_padded -= np.min(semantic_padded)
+            semantic_padded *= 2/(np.max(semantic_padded))
+            semantic_padded -= 1
+            # print("semantic_padded", semantic_padded.dtype, np.max(semantic_padded), np.min(semantic_padded))
+
+            annotated_gt = np.moveaxis(annotated_gt, 2, 0).astype('float64')
+            annotated_gt -= np.min(annotated_gt)
+            annotated_gt *= 2/(np.max(annotated_gt))
+            annotated_gt -= 1
+            # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
+
+            # stick them in the batch arrays
             inputs_annotated.append(annotated)
-            inputs_rgb.append(vals["husky_camera_image_raw"])
-            inputs_semantic.append(vals["husky_semantic_camera_image_raw"])
+            inputs_rgb.append(rgb_padded)
+            inputs_semantic.append(semantic_padded)
             outputs.append(annotated_gt)
 
+        # return !
         return np.array(inputs_annotated), np.array(inputs_rgb), np.array(inputs_semantic), np.array(outputs)
 
 
@@ -185,7 +228,7 @@ if __name__ == "__main__":
     dset = CIS700Dataset()
     annotated, rgb, semantic, out = dset.__getitem__(0)
 
-    print("annotated", annotated.shape)
-    print("rgb", rgb.shape)
-    print("semantic", semantic.shape)
-    print("out", out.shape)
+    print("annotated shape:", annotated.shape)
+    print("rgb shape:", rgb.shape)
+    print("semantic shape:", semantic.shape)
+    print("out shape:", out.shape)

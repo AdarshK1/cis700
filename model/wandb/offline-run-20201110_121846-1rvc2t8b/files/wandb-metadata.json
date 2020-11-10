@@ -1,0 +1,24 @@
+{
+    "os": "Linux-5.4.0-52-generic-x86_64-with-glibc2.29",
+    "python": "3.8.5",
+    "heartbeatAt": "2020-11-10T17:18:47.294807",
+    "startedAt": "2020-11-10T17:18:46.927205",
+    "docker": null,
+    "gpu": "TITAN Xp COLLECTORS EDITION",
+    "gpu_count": 1,
+    "cpu_count": 64,
+    "cuda": "10.2.89",
+    "args": [],
+    "state": "running",
+    "codePath": "model/train.py",
+    "program": "train.py",
+    "git": {
+        "remote": "git@github.com:ljarin/cis700.git",
+        "commit": "cb820663d2ff18718059d03f52e84f7bab301a79"
+    },
+    "email": "adarsh@ghostrobotics.io",
+    "root": "/home/adarsh/ros-workspaces/cis700_workspace/src/cis700",
+    "host": "jarvis",
+    "username": "adarsh",
+    "executable": "/home/adarsh/software/rl_venv/bin/python3"
+}

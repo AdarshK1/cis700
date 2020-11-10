@@ -1,0 +1,10 @@
+Parsing Topic: husky_camera_image_raw
+Parsing Topic: husky_semantic_camera_image_raw
+Parsing Topic: map
+Parsing Topic: move_base_simple_goal
+Parsing Topic: move_base_GlobalPlanner_plan
+Parsing Topic: move_base_TrajectoryPlannerROS_local_plan
+Parsing Topic: unity_ros_husky_TrueState_odom
+Parsing Topic: ground_truth_planning_move_base_GlobalPlanner_plan
+Output shape: torch.Size([20, 3, 369, 369])
+Interpolated shape: torch.Size([20, 3, 401, 403])

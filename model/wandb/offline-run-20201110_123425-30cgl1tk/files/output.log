@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "train.py", line 39, in <module>
+    train_loaders.append(CIS700Dataset(batch=config.batch_size, sub_dir=sdir))
+TypeError: __init__() missing 1 required positional argument: 'output_shape'
