@@ -12,7 +12,7 @@ import wandb
 
 
 class Net(nn.Module):
-    def __init__(self, rgb_net=18, occ_net=18):
+    def __init__(self, rgb_net="other", occ_net="other"):
         super(Net, self).__init__()
         self.rgb_model_type = rgb_net
         self.occ_model_type = occ_net
@@ -93,8 +93,8 @@ class Net(nn.Module):
         output = F.relu(self.t_conv4(output))
         output = F.relu(self.t_conv5(output))
 
-        print("Output shape:", output.shape)
+        # print("Output shape:", output.shape)
         output = F.interpolate(output, (occ_plus.shape[2], occ_plus.shape[3]))
-        print("Interpolated shape:", output.shape)
+        # print("Interpolated shape:", output.shape)
 
         return output

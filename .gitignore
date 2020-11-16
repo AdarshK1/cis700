@@ -56,3 +56,5 @@ CATKIN_IGNORE
 
 model/wandb/
 model/models/
+model/imgs/
+wandb

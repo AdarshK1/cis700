@@ -13,7 +13,7 @@ import cv2
 
 class CIS700Dataset(Dataset):
 
-    def __init__(self, batch=1, sub_dir="cis700_data_gt/", map_size=30):
+    def __init__(self, batch=1, sub_dir="cis700_data_gt/", map_size=70):
 
         self.data_dir = sub_dir
 
@@ -192,7 +192,6 @@ class CIS700Dataset(Dataset):
             # cv2.waitKey(10000)
 
         # mark path
-        print(path)
         if path is not None:
             for path_pose in path:
                 path_map_coords_x = np.clip(int((path_pose[0] - pose[0] + self.map_size / 2) / meta["resolution"]),
@@ -200,8 +199,8 @@ class CIS700Dataset(Dataset):
                                             annotation_channel.shape[0] - 1)
 
                 path_map_coords_y = np.clip(int((path_pose[1] - pose[1] + self.map_size / 2) / meta["resolution"]),
-                                        0,
-                                        annotation_channel.shape[0] - 1)
+                                            0,
+                                            annotation_channel.shape[0] - 1)
 
                 if verbose:
                     print("Path Point", pose[0], pose[1])
@@ -210,104 +209,98 @@ class CIS700Dataset(Dataset):
                 annotation_channel = cv2.circle(annotation_channel, (path_map_coords_x, path_map_coords_y), 2,
                                                 (255, 0, 255), -1)
 
-        cv2.imshow("test", annotation_channel)
-        cv2.waitKey(1000)
+        if verbose:
+            cv2.imshow("test", annotation_channel)
+            cv2.waitKey(1000)
 
         return annotation_channel
 
     def __len__(self):
         return self.num_samples
 
-    def __getitem__(self):
+    def __getitem__(self, not_used_idx):
 
-        rand_indices = np.random.choice(self.items_left, self.batch_size) + self.skip_first_n_samples
-        inputs_annotated = []
-        inputs_rgb = []
-        inputs_semantic = []
-        outputs = []
+        rand_idx = np.random.choice(self.items_left, 1) + self.skip_first_n_samples
 
         # TODO (akulkarni) comment this bs
-        for rand_idx in rand_indices:
-            self.items_left = np.delete(self.items_left, np.where(self.items_left == rand_idx))
-            indices = {}
-            vals = {}
-            for topic_dir in self.topic_dirs:
-                try:
-                    indices[topic_dir] = (max([idx for idx, (k, v) in enumerate(self.data_holder[topic_dir].items()) if
-                                               k < (rand_idx * self.actual_time_length / self.num_samples)]))
-                except ValueError:
-                    print(topic_dir,
-                          rand_idx,
-                          self.samples_per_second,
-                          self.num_samples,
-                          self.actual_time_length,
-                          (rand_idx * self.actual_time_length / self.num_samples))
+        self.items_left = np.delete(self.items_left, np.where(self.items_left == rand_idx))
+        indices = {}
+        vals = {}
+        for topic_dir in self.topic_dirs:
+            try:
+                indices[topic_dir] = (max([idx for idx, (k, v) in enumerate(self.data_holder[topic_dir].items()) if
+                                           k < (rand_idx * self.actual_time_length / self.num_samples)]))
+            except ValueError:
+                print(topic_dir,
+                      rand_idx,
+                      self.samples_per_second,
+                      self.num_samples,
+                      self.actual_time_length,
+                      (rand_idx * self.actual_time_length / self.num_samples))
 
-                vals[topic_dir] = (self.data_list_holder[topic_dir][indices[topic_dir]][1])
-            map_img, map_meta = self.process_map(vals["map"])
+            vals[topic_dir] = (self.data_list_holder[topic_dir][indices[topic_dir]][1])
+        map_img, map_meta = self.process_map(vals["map"])
 
-            # annotate the input map with pose, goal and path
-            annotated = self.annotate_map(map_img,
-                                          map_meta,
-                                          vals["move_base_GlobalPlanner_plan"],
-                                          vals["move_base_simple_goal"],
-                                          vals["unity_ros_husky_TrueState_odom"])
+        # annotate the input map with pose, goal and path
+        # annotated = self.annotate_map(map_img,
+        #                               map_meta,
+        #                               vals["move_base_GlobalPlanner_plan"],
+        #                               vals["move_base_simple_goal"],
+        #                               vals["unity_ros_husky_TrueState_odom"])
 
-            annotated_centered = self.annotate_map_centered(map_img,
-                                                            map_meta,
-                                                            vals["move_base_GlobalPlanner_plan"],
-                                                            vals["move_base_simple_goal"],
-                                                            vals["unity_ros_husky_TrueState_odom"], verbose=True)
+        # this one is centered on the robot and of fixed size
+        annotated = self.annotate_map_centered(map_img,
+                                               map_meta,
+                                               vals["move_base_GlobalPlanner_plan"],
+                                               vals["move_base_simple_goal"],
+                                               vals["unity_ros_husky_TrueState_odom"], verbose=False)
 
-            # annotate the the map with gt path
-            annotated_gt = self.annotate_map(map_img,
-                                             map_meta,
-                                             vals["ground_truth_planning_move_base_GlobalPlanner_plan"],
-                                             None,
-                                             None)
+        # annotate the the map with gt path
+        annotated_gt = self.annotate_map_centered(map_img,
+                                                  map_meta,
+                                                  vals["ground_truth_planning_move_base_GlobalPlanner_plan"],
+                                                  None,
+                                                  vals["unity_ros_husky_TrueState_odom"], verbose=False)
+        # pad the rgb and semantic images
+        curr_rgb = vals["husky_camera_image_raw"]
+        curr_semantic = vals["husky_semantic_camera_image_raw"]
 
-            # pad the rgb and semantic images
-            curr_rgb = vals["husky_camera_image_raw"]
-            curr_semantic = vals["husky_semantic_camera_image_raw"]
+        rgb_padded = np.zeros(annotated.shape)
+        rgb_padded[:curr_rgb.shape[0], :curr_rgb.shape[1], :] = curr_rgb
+        semantic_padded = np.zeros(annotated.shape)
+        semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
 
-            rgb_padded = np.zeros(annotated.shape)
-            rgb_padded[:curr_rgb.shape[0], :curr_rgb.shape[1], :] = curr_rgb
-            semantic_padded = np.zeros(annotated.shape)
-            semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
+        # Make em all channel first, normalize em from -1 to 1
+        # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
+        annotated = np.moveaxis(annotated, 2, 0).astype('float64')
+        # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
+        annotated -= np.min(annotated)
+        annotated *= 2.0 / (np.max(annotated))
+        annotated -= 1.0
+        # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
 
-            # Make em all channel first, normalize em from -1 to 1
-            annotated = np.moveaxis(annotated, 2, 0).astype('float64')
-            annotated -= np.min(annotated)
-            annotated *= 2 / (np.max(annotated))
-            annotated -= 1
-            # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
+        rgb_padded = np.moveaxis(rgb_padded, 2, 0).astype('float64')
+        rgb_padded -= np.min(rgb_padded)
+        rgb_padded *= 2.0 / (np.max(rgb_padded))
+        rgb_padded -= 1.0
+        # print("rgb_padded", rgb_padded.dtype, np.max(rgb_padded), np.min(rgb_padded))
 
-            rgb_padded = np.moveaxis(rgb_padded, 2, 0).astype('float64')
-            rgb_padded -= np.min(rgb_padded)
-            rgb_padded *= 2 / (np.max(rgb_padded))
-            rgb_padded -= 1
-            # print("rgb_padded", rgb_padded.dtype, np.max(rgb_padded), np.min(rgb_padded))
+        semantic_padded = np.moveaxis(semantic_padded, 2, 0).astype('float64')
+        semantic_padded -= np.min(semantic_padded)
+        semantic_padded *= 2.0 / (np.max(semantic_padded))
+        semantic_padded -= 1.0
+        # print("semantic_padded", semantic_padded.dtype, np.max(semantic_padded), np.min(semantic_padded))
 
-            semantic_padded = np.moveaxis(semantic_padded, 2, 0).astype('float64')
-            semantic_padded -= np.min(semantic_padded)
-            semantic_padded *= 2 / (np.max(semantic_padded))
-            semantic_padded -= 1
-            # print("semantic_padded", semantic_padded.dtype, np.max(semantic_padded), np.min(semantic_padded))
-
-            annotated_gt = np.moveaxis(annotated_gt, 2, 0).astype('float64')
-            annotated_gt -= np.min(annotated_gt)
-            annotated_gt *= 2 / (np.max(annotated_gt))
-            annotated_gt -= 1
-            # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
-
-            # stick them in the batch arrays
-            inputs_annotated.append(annotated)
-            inputs_rgb.append(rgb_padded)
-            inputs_semantic.append(semantic_padded)
-            outputs.append(annotated_gt)
+        # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
+        annotated_gt = np.moveaxis(annotated_gt, 2, 0).astype('float64')
+        # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
+        annotated_gt -= np.min(annotated_gt)
+        annotated_gt *= 2.0 / (np.max(annotated_gt))
+        annotated_gt -= 1.0
+        # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
 
         # return !
-        return np.array(inputs_annotated), np.array(inputs_rgb), np.array(inputs_semantic), np.array(outputs)
+        return np.array(annotated), np.array(rgb_padded), np.array(semantic_padded), np.array(annotated_gt)
 
 
 if __name__ == "__main__":
