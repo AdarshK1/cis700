@@ -6,17 +6,20 @@ from torchvision import transforms, utils
 import copy
 import cv2
 
-#TODO(akulkarni) i realized this whole setup requires that the dataset is held in RAM...that kinda sucks
+
+# TODO(akulkarni) i realized this whole setup requires that the dataset is held in RAM...that kinda sucks
 # with big datasets so fix that sometime soon (should be doable just refactoring tbh)
 
 
 class CIS700Dataset(Dataset):
 
-    def __init__(self, batch=1, sub_dir="cis700_data_gt/"):
+    def __init__(self, batch=1, sub_dir="cis700_data_gt/", map_size=30):
 
         self.data_dir = sub_dir
 
-        #TODO(akulkarni) make it read in the config used when parsing bags into npy arrays
+        self.map_size = map_size
+
+        # TODO(akulkarni) make it read in the config used when parsing bags into npy arrays
         self.topic_dirs = ["husky_camera_image_raw",
                            "husky_semantic_camera_image_raw",
                            "map",
@@ -150,6 +153,68 @@ class CIS700Dataset(Dataset):
 
         return annotation_channel
 
+    def annotate_map_centered(self, map_arr, meta, path, goal, pose, verbose=False):
+        annotation_channel = np.full((int(self.map_size / meta["resolution"]),
+                                      int(self.map_size / meta["resolution"]), 3), 0, np.uint8)
+
+        for i in range(annotation_channel.shape[0]):
+            for j in range(annotation_channel.shape[1]):
+                world_x = pose[0] + (i * meta["resolution"] - self.map_size / 2)
+                world_y = pose[1] + (j * meta["resolution"] - self.map_size / 2)
+
+                world_map_coords_x = int((world_x - meta["origin_position_x"]) / meta["resolution"])
+                world_map_coords_y = int((world_y - meta["origin_position_y"]) / meta["resolution"])
+                # print(i, j, pose[0], pose[1], world_x, world_y, world_map_coords_x, world_map_coords_y)
+
+                if map_arr.shape[0] > world_map_coords_x > 0 and 0 < world_map_coords_y < map_arr.shape[1]:
+                    annotation_channel[i, j, 0] = map_arr[world_map_coords_x, world_map_coords_y]
+
+        # mark goal
+        if goal is not None:
+            goal_map_coords_x = np.clip(int((goal[0] - pose[0] + self.map_size / 2) / meta["resolution"]),
+                                        0,
+                                        annotation_channel.shape[0] - 1)
+
+            goal_map_coords_y = np.clip(int((goal[1] - pose[1] + self.map_size / 2) / meta["resolution"]),
+                                        0,
+                                        annotation_channel.shape[0] - 1)
+
+            if verbose:
+                print("robot goal", goal[0], goal[1])
+                print("goal_converted", goal_map_coords_x, goal_map_coords_y)
+
+            annotation_channel = cv2.circle(annotation_channel,
+                                            (goal_map_coords_x, goal_map_coords_y),
+                                            5,
+                                            (255, 255, 255),
+                                            -1)
+            # cv2.imshow("test", annotation_channel)
+            # cv2.waitKey(10000)
+
+        # mark path
+        print(path)
+        if path is not None:
+            for path_pose in path:
+                path_map_coords_x = np.clip(int((path_pose[0] - pose[0] + self.map_size / 2) / meta["resolution"]),
+                                            0,
+                                            annotation_channel.shape[0] - 1)
+
+                path_map_coords_y = np.clip(int((path_pose[1] - pose[1] + self.map_size / 2) / meta["resolution"]),
+                                        0,
+                                        annotation_channel.shape[0] - 1)
+
+                if verbose:
+                    print("Path Point", pose[0], pose[1])
+                    print("Path cvtd", path_map_coords_x, path_map_coords_y)
+
+                annotation_channel = cv2.circle(annotation_channel, (path_map_coords_x, path_map_coords_y), 2,
+                                                (255, 0, 255), -1)
+
+        cv2.imshow("test", annotation_channel)
+        cv2.waitKey(1000)
+
+        return annotation_channel
+
     def __len__(self):
         return self.num_samples
 
@@ -161,7 +226,7 @@ class CIS700Dataset(Dataset):
         inputs_semantic = []
         outputs = []
 
-        #TODO (akulkarni) comment this bs
+        # TODO (akulkarni) comment this bs
         for rand_idx in rand_indices:
             self.items_left = np.delete(self.items_left, np.where(self.items_left == rand_idx))
             indices = {}
@@ -188,6 +253,12 @@ class CIS700Dataset(Dataset):
                                           vals["move_base_simple_goal"],
                                           vals["unity_ros_husky_TrueState_odom"])
 
+            annotated_centered = self.annotate_map_centered(map_img,
+                                                            map_meta,
+                                                            vals["move_base_GlobalPlanner_plan"],
+                                                            vals["move_base_simple_goal"],
+                                                            vals["unity_ros_husky_TrueState_odom"], verbose=True)
+
             # annotate the the map with gt path
             annotated_gt = self.annotate_map(map_img,
                                              map_meta,
@@ -207,25 +278,25 @@ class CIS700Dataset(Dataset):
             # Make em all channel first, normalize em from -1 to 1
             annotated = np.moveaxis(annotated, 2, 0).astype('float64')
             annotated -= np.min(annotated)
-            annotated *= 2/(np.max(annotated))
+            annotated *= 2 / (np.max(annotated))
             annotated -= 1
             # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
 
             rgb_padded = np.moveaxis(rgb_padded, 2, 0).astype('float64')
             rgb_padded -= np.min(rgb_padded)
-            rgb_padded *= 2/(np.max(rgb_padded))
+            rgb_padded *= 2 / (np.max(rgb_padded))
             rgb_padded -= 1
             # print("rgb_padded", rgb_padded.dtype, np.max(rgb_padded), np.min(rgb_padded))
 
             semantic_padded = np.moveaxis(semantic_padded, 2, 0).astype('float64')
             semantic_padded -= np.min(semantic_padded)
-            semantic_padded *= 2/(np.max(semantic_padded))
+            semantic_padded *= 2 / (np.max(semantic_padded))
             semantic_padded -= 1
             # print("semantic_padded", semantic_padded.dtype, np.max(semantic_padded), np.min(semantic_padded))
 
             annotated_gt = np.moveaxis(annotated_gt, 2, 0).astype('float64')
             annotated_gt -= np.min(annotated_gt)
-            annotated_gt *= 2/(np.max(annotated_gt))
+            annotated_gt *= 2 / (np.max(annotated_gt))
             annotated_gt -= 1
             # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
 
@@ -240,10 +311,14 @@ class CIS700Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    dset = CIS700Dataset()
-    annotated, rgb, semantic, out = dset.__getitem__(0)
+    # np.random.seed(10)
+    N = 10
+    sample_fname = "/home/adarsh/ros-workspaces/cis700_workspace/src/learned_planning_pipeline/bag_harvester/cis700_data_gt/"
+    dset = CIS700Dataset(batch=1, sub_dir=sample_fname)
+    for i in range(N):
+        annotated, rgb, semantic, out = dset.__getitem__()
 
-    print("annotated shape:", annotated.shape)
-    print("rgb shape:", rgb.shape)
-    print("semantic shape:", semantic.shape)
-    print("out shape:", out.shape)
+        print("annotated shape:", annotated.shape)
+        print("rgb shape:", rgb.shape)
+        print("semantic shape:", semantic.shape)
+        print("out shape:", out.shape)

@@ -12,7 +12,7 @@ from dataloaders import CIS700Dataset
 hyperparameter_defaults = dict(
     batch_size=64,
     learning_rate=0.0001,
-    weight_decay=0.0001,
+    weight_decay=0.00005,
     epochs=150
 )
 
@@ -50,10 +50,6 @@ for epoch in range(config.epochs):
         # for every batch
         for iteration in range(train_loader.num_samples // config.batch_size):
             annotated, rgb, semantic, out = train_loader.__getitem__()
-            # print("annotated", annotated.shape)
-            # print("rgb", rgb.shape)
-            # print("semantic", semantic.shape)
-            # print("out", out.shape)
 
             optimizer.zero_grad()  # zero the gradient buffers
 
