@@ -55,7 +55,7 @@
 <group ns="$(arg gt_ns)">
 
     <node pkg="octomap_server" type="octomap_server_node" name="octomap_server_gt" output="screen">
-    <param name="map_file" value="$(find sim_launch)/ground_truth_octomap/exported_unity_map.bt"/>
+      <param name="map_file" value="$(find sim_launch)/ground_truth_octomap/exported_unity_map.bt"/>
       <remap from="projected_map" to="map"/>
       <param name="frame_id" value="world"/>
     </node>
@@ -77,12 +77,11 @@
     <param name="local_costmap/global_frame" value="$(arg ns)/$(arg odom_frame_id)"/>
     <param name="local_costmap/robot_base_frame" value="$(arg ns)/$(arg base_frame_id)"/>
     <param name="TrajectoryPlannerROS/global_frame_id" value="$(arg ns)/$(arg odom_frame_id)"/>
-    <!-- <param name="static_map" value="true"/> -->
 
-      <remap from="odom" to="$(arg odom_topic)"/>
-      <remap from="scan" to="$(arg pointcloud_topic)"/>
-      <remap from="move_base/goal" to="/move_base/goal"/>
-      <!-- <remap from="cmd_vel" to="/husky/cmd_vel"/> -->
+    <remap from="odom" to="$(arg odom_topic)"/>
+    <remap from="scan" to="$(arg pointcloud_topic)"/>
+    <remap from="move_base/goal" to="/move_base/goal"/>
+    <!-- <remap from="cmd_vel" to="/husky/cmd_vel"/> -->
     </node>
   </group>
 

@@ -1,0 +1,15 @@
+<launch>
+    <arg name="bag_name" default="data_bag"/>
+    <arg name="x" default="10"/>
+    <arg name="y" default="10"/>
+
+    <node pkg="rosbag" type="record" name="rosbag_data"
+        args="record --output-name=$(arg bag_name)  /unity_ros/husky/TrueState/odom /husky/camera/image_raw /husky/semantic_camera/image_raw /move_base_simple/goal /map /move_base/GlobalPlanner/plan /move_base/TrajectoryPlannerROS/local_plan /ground_truth_planning/move_base/GlobalPlanner/plan"/>
+
+    <include file="$(find arl_unity_ros_ground)/launch/simulator_with_husky_nolidar.launch">
+      <arg name="x" value="$(arg x)" />
+      <arg name="y" value="$(arg y)" />
+    </include>
+
+    <include file="$(find sim_launch)/launch/sim_with_ground_truth.launch" />
+</launch>

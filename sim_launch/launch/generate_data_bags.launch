@@ -1,0 +1,3 @@
+<launch>
+<node pkg="sim_launch" type="generate_data_bags.py" name="generate_data_bags" />
+</launch>
