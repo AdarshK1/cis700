@@ -2,6 +2,11 @@
     <arg name="bag_name" default="data_bag"/>
     <arg name="x" default="10"/>
     <arg name="y" default="10"/>
+    <param name="/generate_data_bags/num_iterations" value="10"/>
+    <param name="/generate_data_bags/timeout" value="60"/>
+    <rosparam param="/generate_data_bags/world_origin">[100.,100.]</rosparam>
+    <rosparam param="/generate_data_bags/world_size">[0.,0.]</rosparam>
+    <param name="/generate_data_bags/goal_distance" value="30"/>
 
     <node pkg="rosbag" type="record" name="rosbag_data"
         args="record --output-name=$(arg bag_name)  /unity_ros/husky/TrueState/odom /husky/camera/image_raw /husky/semantic_camera/image_raw /move_base_simple/goal /map /move_base/GlobalPlanner/plan /move_base/TrajectoryPlannerROS/local_plan /ground_truth_planning/move_base/GlobalPlanner/plan"/>

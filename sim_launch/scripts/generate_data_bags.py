@@ -37,10 +37,10 @@ class GenerateData:
     def generate_data(self,):
 
         # TODO make this launch file args
-        world_size = [100., 100.]
-        world_origin = [0., 0.]
-        goal_distance = 30
-        timeout = 60
+        world_size = rospy.get_param('/generate_data_bags/world_size',[100., 100.])
+        world_origin = rospy.get_param('/generate_data_bags/world_origin',[0., 0.])
+        goal_distance = rospy.get_param('/generate_data_bags/goal_distance',30)
+        timeout = rospy.get_param('/generate_data_bags/timeout',60)
 
         ros_pack = rospkg.RosPack()
         sim_launch_path = ros_pack.get_path('sim_launch')
@@ -70,7 +70,7 @@ class GenerateData:
 
         # Call action server
         client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
-        while not rospy.is_shutdown() and self.status is None or not client.wait_for_server(rospy.Duration(1)):
+        while not rospy.is_shutdown() and (self.status is None or not client.wait_for_server(rospy.Duration(1))):
             rospy.logerr("NO ACTION SERVER - waiting")
             rospy.sleep(.1)
         while not rospy.is_shutdown() and self.status_gt is None:
@@ -95,7 +95,7 @@ class GenerateData:
                 break
             if 2 <= self.status <= 5 or 2 <= self.status_gt <= 5:
                 result = False
-                rospy.logerr("Action Client Failed")
+                rospy.logerr("Action server Failed")
                 break
             if rospy.Time.now() - start_time > rospy.Duration(timeout):
                 result = False
@@ -126,7 +126,7 @@ class GenerateData:
 if __name__ == '__main__':
     rospy.init_node('generate_data_bags', anonymous=True)
 
-    num_iterations = 10  # TODO make launch file param
+    num_iterations = rospy.get_param('/generate_data_bags/num_iterations',10)
     gd = GenerateData()
     for i in range(num_iterations):
         if not rospy.is_shutdown():
