@@ -28,5 +28,5 @@ obstacles_layer:
 
 inflater_layer:
   enabled: true
-  inflation_radius: 0.30
+  inflation_radius: 1.0
 
