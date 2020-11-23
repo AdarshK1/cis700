@@ -43,8 +43,8 @@ class GenerateData:
         bag_name = sim_launch_path + '/data/' + time.strftime("%Y%m%d-%H%M%S") + '.bag'
 
         # generate random start points
-        start_x = world_origin[0] + world_size[0]*np.random.rand()
-        start_y = world_origin[1] + world_size[0]*np.random.rand()
+        start_x = world_origin[0] + (world_size[0]- goal_distance)*np.random.rand()
+        start_y = world_origin[1] + (world_size[1]- goal_distance)*np.random.rand()
         yaw = np.random.rand()*2*np.pi
         rospy.logwarn('start location ' + str(start_x) + ',' + str(start_y))
 
@@ -67,10 +67,11 @@ class GenerateData:
 
         # Call action server
         client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
+        client_gt = actionlib.SimpleActionClient('ground_truth_planning/move_base', MoveBaseAction)
         while not rospy.is_shutdown() and not client.wait_for_server(rospy.Duration(1)):
             rospy.logwarn("NO ACTION SERVER - waiting")
             rospy.sleep(.1)
-        while not rospy.is_shutdown() and self.status_gt is None:
+        while not rospy.is_shutdown() and not client_gt.wait_for_server(rospy.Duration(1)):
             rospy.logwarn("NO ground truth ACTION SERVER - waiting")
             rospy.sleep(.1)
         goal = MoveBaseGoal()
@@ -82,17 +83,19 @@ class GenerateData:
 
         goal.target_pose.header.frame_id = 'world'
         client.send_goal(goal)
+        client_gt.send_goal(goal)
         rospy.loginfo("Sent goal")
         rospy.logwarn("Waiting for Action Server result " + str(timeout) + "s")
         start_time = rospy.Time.now()
         result = False
         while not rospy.is_shutdown():
+            dur = rospy.Time.now() - start_time
             if self.status == GoalStatus.SUCCEEDED:
                 result = True
                 rospy.logwarn("Action server succeeded")
                 break
             if 2 <= self.status <= 5 or 2 <= self.status_gt <= 5:
-                if rospy.Time.now() - start_time < rospy.Duration(10):
+                if dur < rospy.Duration(10):
                     result = False
                     rospy.logerr("Action server Failed")
                     break
@@ -100,13 +103,13 @@ class GenerateData:
                     rospy.logwarn("Action server Failed but not deleting bag.")
                     result = True
                     break
-            if rospy.Time.now() - start_time > rospy.Duration(timeout):
-                result = False
-                rospy.logerr("Timeout")
+            if dur > rospy.Duration(timeout):
+                result = True
+                rospy.logerr("Timeout, not deleting bag")
                 break
             rospy.sleep(.1)
         if not result:
-            rospy.logwarn("Action server failed, deleting bag")
+            rospy.logwarn("Deleting bag")
             if os.path.exists(bag_name):
                 os.remove(bag_name)
             if os.path.exists(bag_name + '.active'):

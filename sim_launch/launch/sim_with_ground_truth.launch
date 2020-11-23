@@ -80,7 +80,7 @@
 
     <remap from="odom" to="$(arg odom_topic)"/>
     <remap from="scan" to="$(arg pointcloud_topic)"/>
-    <remap from="move_base/goal" to="/move_base/goal"/>
+    <!-- <remap from="move_base/goal" to="/move_base/goal"/> -->
     <!-- <remap from="cmd_vel" to="/husky/cmd_vel"/> -->
     </node>
   </group>
