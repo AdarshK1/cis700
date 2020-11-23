@@ -2,7 +2,6 @@
 <launch>
   <node pkg="tf2_ros" type="static_transform_publisher" name="gt_pub" args="1 0 0 0 0 0 1 husky/TrueState husky/base"/>
   <node pkg="tf2_ros" type="static_transform_publisher" name="odom_pub" args="0 0 0 0 0 0 husky/odom world"/>
-  <node pkg="tf2_ros" type="static_transform_publisher" name="shift_pub" args="-9.8 32 0 0 0 0 shift_world world"/>
 
   <node pkg="nodelet" type="nodelet" name="nodelet_manager" args="manager" />
 
@@ -58,7 +57,7 @@
     <node pkg="octomap_server" type="octomap_server_node" name="octomap_server_gt" output="screen">
       <param name="map_file" value="$(find sim_launch)/ground_truth_octomap/rand_gen.bt"/>
       <remap from="projected_map" to="map"/>
-      <param name="frame_id" value="shift_world"/>
+      <param name="frame_id" value="world"/>
     </node>
 
     <node pkg="move_base" type="move_base" respawn="false" name="move_base" output="screen">
