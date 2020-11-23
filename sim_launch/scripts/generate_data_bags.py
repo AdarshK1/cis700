@@ -16,7 +16,7 @@ class GenerateData:
     def __init__(self):
         self.proc = None
         self.launches = None
-        self.status = -1
+        self.status = None
         self.status_gt = None
         rospy.Subscriber("move_base/status", GoalStatusArray, self.status_callback)
         rospy.Subscriber("ground_truth_planning/move_base/status", GoalStatusArray, self.gt_status_callback)
@@ -67,7 +67,7 @@ class GenerateData:
 
         # Call action server
         client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
-        while not rospy.is_shutdown() and (self.status is None or not client.wait_for_server(rospy.Duration(1))):
+        while not rospy.is_shutdown() and not client.wait_for_server(rospy.Duration(1)):
             rospy.logwarn("NO ACTION SERVER - waiting")
             rospy.sleep(.1)
         while not rospy.is_shutdown() and self.status_gt is None:
@@ -89,19 +89,23 @@ class GenerateData:
         while not rospy.is_shutdown():
             if self.status == GoalStatus.SUCCEEDED:
                 result = True
+                rospy.logwarn("Action server succeeded")
                 break
             if 2 <= self.status <= 5 or 2 <= self.status_gt <= 5:
-                result = False
-                rospy.logerr("Action server Failed")
-                break
+                if rospy.Time.now() - start_time < rospy.Duration(10):
+                    result = False
+                    rospy.logerr("Action server Failed")
+                    break
+                else:
+                    rospy.logwarn("Action server Failed but not deleting bag.")
+                    result = True
+                    break
             if rospy.Time.now() - start_time > rospy.Duration(timeout):
                 result = False
                 rospy.logerr("Timeout")
                 break
             rospy.sleep(.1)
-        if result:
-            rospy.logwarn("Action server succeeded")
-        else:
+        if not result:
             rospy.logwarn("Action server failed, deleting bag")
             if os.path.exists(bag_name):
                 os.remove(bag_name)
