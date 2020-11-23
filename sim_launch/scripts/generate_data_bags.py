@@ -21,7 +21,6 @@ class GenerateData:
         rospy.Subscriber("move_base/status", GoalStatusArray, self.status_callback)
         rospy.Subscriber("ground_truth_planning/move_base/status", GoalStatusArray, self.gt_status_callback)
 
-
     def status_callback(self, msg):
         if len(msg.status_list) > 0:
             self.status = msg.status_list[0].status
@@ -35,13 +34,10 @@ class GenerateData:
             self.status_gt = -1
 
     def generate_data(self,):
-
-        # TODO make this launch file args
-        world_size = rospy.get_param('/generate_data_bags/world_size',[100., 100.])
-        world_origin = rospy.get_param('/generate_data_bags/world_origin',[0., 0.])
-        goal_distance = rospy.get_param('/generate_data_bags/goal_distance',30)
-        timeout = rospy.get_param('/generate_data_bags/timeout',60)
-
+        world_size = rospy.get_param('~world_size', [100., 100.])
+        world_origin = rospy.get_param('~world_origin', [0., 0.])
+        goal_distance = rospy.get_param('~goal_distance', 30)
+        timeout = rospy.get_param('~timeout', 60)
         ros_pack = rospkg.RosPack()
         sim_launch_path = ros_pack.get_path('sim_launch')
         bag_name = sim_launch_path + '/data/' + time.strftime("%Y%m%d-%H%M%S") + '.bag'
@@ -49,6 +45,7 @@ class GenerateData:
         # generate random start points
         start_x = world_origin[0] + world_size[0]*np.random.rand()
         start_y = world_origin[1] + world_size[0]*np.random.rand()
+        yaw = np.random.rand()*2*np.pi
         rospy.logwarn('start location ' + str(start_x) + ',' + str(start_y))
 
         # launch unity
@@ -61,7 +58,7 @@ class GenerateData:
         uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
         roslaunch.configure_logging(uuid)
         sim_launch_launch_path = sim_launch_path + '/launch/generate_data_bags_helper.launch'
-        cli_args = [sim_launch_launch_path, 'x:=' + str(start_x), 'y:=' + str(start_y), 'bag_name:=' + bag_name]
+        cli_args = [sim_launch_launch_path, 'x:=' + str(start_x), 'y:=' + str(start_y), 'yaw:=' + str(yaw), 'bag_name:=' + bag_name]
         roslaunch_args = cli_args[1:]
         roslaunch_file = [(roslaunch.rlutil.resolve_launch_arguments(cli_args)[0], roslaunch_args)]
         self.launches = roslaunch.parent.ROSLaunchParent(uuid, roslaunch_file)
@@ -71,10 +68,10 @@ class GenerateData:
         # Call action server
         client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         while not rospy.is_shutdown() and (self.status is None or not client.wait_for_server(rospy.Duration(1))):
-            rospy.logerr("NO ACTION SERVER - waiting")
+            rospy.logwarn("NO ACTION SERVER - waiting")
             rospy.sleep(.1)
         while not rospy.is_shutdown() and self.status_gt is None:
-            rospy.logerr("NO ground truth ACTION SERVER - waiting")
+            rospy.logwarn("NO ground truth ACTION SERVER - waiting")
             rospy.sleep(.1)
         goal = MoveBaseGoal()
         # TODO also randomize orientation
@@ -126,7 +123,7 @@ class GenerateData:
 if __name__ == '__main__':
     rospy.init_node('generate_data_bags', anonymous=True)
 
-    num_iterations = rospy.get_param('/generate_data_bags/num_iterations',10)
+    num_iterations = rospy.get_param('~num_iterations', 10)
     gd = GenerateData()
     for i in range(num_iterations):
         if not rospy.is_shutdown():

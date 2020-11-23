@@ -1,3 +1,9 @@
 <launch>
-<node pkg="sim_launch" type="generate_data_bags.py" name="generate_data_bags" />
+<node pkg="sim_launch" type="generate_data_bags.py" name="generate_data_bags" >
+    <param name="num_iterations" value="10"/>
+    <param name="timeout" value="500"/>
+    <rosparam param="world_origin">[-1000.,-1000.]</rosparam>
+    <rosparam param="world_size">[2000.,2000.]</rosparam>
+    <param name="goal_distance" value="100"/>
+</node>
 </launch>

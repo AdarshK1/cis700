@@ -1,0 +1,9 @@
+unity_command:
+  initial_commands:
+    [
+      "$(arg unity_namespace)Settings set_frame_rate 30",
+      "$(arg unity_namespace)Clock realtime false",
+      "$(arg unity_namespace)Spawner scene RandGen",
+    ]
+
+use_sim_time: true
