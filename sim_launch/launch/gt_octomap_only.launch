@@ -1,0 +1,10 @@
+<launch>
+<arg name="gt_ns" default="ground_truth_planning"/>
+<group ns="$(arg gt_ns)">
+    <node pkg="octomap_server" type="octomap_server_node" name="octomap_server_gt" output="screen">
+      <param name="map_file" value="$(find sim_launch)/ground_truth_octomap/rand_gen.bt"/>
+      <remap from="projected_map" to="map"/>
+      <param name="frame_id" value="world"/>
+    </node>
+</group>
+</launch>
