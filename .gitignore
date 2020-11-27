@@ -1,5 +1,8 @@
 devel/
 logs/
+sim_launch/data
+sim_launch/sim_binary
+sim_launch/sim_binary.zip
 build/
 bin/
 lib/

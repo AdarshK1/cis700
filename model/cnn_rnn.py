@@ -7,7 +7,6 @@ import torchvision
 import numpy as np
 import wandb
 
-
 # wandb.init(project="cis700")
 
 
@@ -59,7 +58,6 @@ class Net(nn.Module):
     rgb is just an rgb image, occ_plus is a 3 channel data structure with the occupancy grid, suggested path and 
     goal all encoded in the different channels
     '''
-
     def forward(self, rgb, occ_plus):
 
         if self.rgb_model_type == "other":

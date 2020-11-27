@@ -5,81 +5,23 @@ from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms, utils
 import copy
 import cv2
-
+import sys
 
 # TODO(akulkarni) i realized this whole setup requires that the dataset is held in RAM...that kinda sucks
 # with big datasets so fix that sometime soon (should be doable just refactoring tbh)
 
+sys.path.append("/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils")
 
-class CIS700Dataset(Dataset):
+from base_data_loader import BaseDataset
 
-    def __init__(self, batch=1, sub_dir="cis700_data_gt/", map_size=70):
 
-        self.data_dir = sub_dir
+class CIS700Dataset(BaseDataset):
 
+    def __init__(self, config_file, sub_dir, map_size=70, samples_per_second=120, skip_last_n_seconds=2, skip_first_n_seconds=0):
+
+        super().__init__(config_file, sub_dir, samples_per_second=samples_per_second,
+                         skip_last_n_seconds=skip_last_n_seconds, skip_first_n_seconds=skip_first_n_seconds)
         self.map_size = map_size
-
-        # TODO(akulkarni) make it read in the config used when parsing bags into npy arrays
-        self.topic_dirs = ["husky_camera_image_raw",
-                           "husky_semantic_camera_image_raw",
-                           "map",
-                           "move_base_simple_goal",
-                           "move_base_GlobalPlanner_plan",
-                           "move_base_TrajectoryPlannerROS_local_plan",
-                           "unity_ros_husky_TrueState_odom",
-                           "ground_truth_planning_move_base_GlobalPlanner_plan"]
-
-        self.data_holder = {}
-        self.data_list_holder = {}
-        self.initial_times = {}
-        self.raw_end_times = {}
-
-        for topic_dir in self.topic_dirs:
-            self.data_holder[topic_dir] = {}
-            print("Parsing Topic: {}".format(topic_dir))
-            for idx, item in enumerate(sorted(glob.glob(self.data_dir + topic_dir + "/*"))):
-
-                datum = np.load(item, allow_pickle=True)
-                # print(topic_dir, datum.shape)
-                if idx == 0:
-                    self.initial_times[topic_dir] = datum[-1]
-
-                if topic_dir == "husky_semantic_camera_image_raw" or topic_dir == "husky_camera_image_raw":
-                    self.data_holder[topic_dir][datum[-1] - self.initial_times[topic_dir]] = datum[:-1][0]
-                # elif topic_dir == "map":
-                #     print(datum[:-1].shape)
-                else:
-                    self.data_holder[topic_dir][datum[-1] - self.initial_times[topic_dir]] = datum[:-1]
-
-                self.raw_end_times[topic_dir] = datum[-1]
-
-            self.data_list_holder[topic_dir] = list([(k, v) for k, v in self.data_holder[topic_dir].items()])
-
-        # print(self.data_holder.keys())
-        # for key in self.data_holder.keys():
-        #     print(sorted(list(self.data_holder[key].keys())))
-        self.end_times = [sorted(list(self.data_holder[key].keys()))[-1] for key in self.data_holder.keys()]
-        # self.dataholder[topic_dir] is organized as a dictionary where the key is a normalized time
-        # print(self.end_times)
-
-        self.samples_per_second = 30
-
-        # this is super inconvenient, but it works
-        self.skip_last_n_seconds = 5
-        self.skip_first_n_samples = 15
-
-        self.actual_end_time = int(min(np.array(self.end_times)))
-        self.actual_time_length = self.actual_end_time - self.skip_last_n_seconds
-        self.num_samples = self.actual_time_length * self.samples_per_second
-
-        self.batch_size = batch
-
-        # make sure the randomness doesnt repeat data points
-        self.items_left = None
-        self.reset_items_left()
-
-    def reset_items_left(self):
-        self.items_left = [i for i in range(self.num_samples)]
 
     def process_map(self, map_arr, verbose=False):
         map_meta = {"origin_position_x": map_arr[-10],
@@ -216,98 +158,66 @@ class CIS700Dataset(Dataset):
     def __len__(self):
         return self.num_samples
 
-    def __getitem__(self, not_used_idx):
+    def norm_stuff(self, arr):
+        arr = np.moveaxis(arr, 2, 0).astype('float64')
+        arr -= np.min(arr)
+        arr *= 2.0 / (np.max(arr))
+        arr -= 1.0
+        return arr
 
-        rand_idx = np.random.choice(self.items_left, 1) + self.skip_first_n_samples
+    def __getitem__(self, idx):
+        vals = super().__getitem__(idx)
 
-        # TODO (akulkarni) comment this bs
-        self.items_left = np.delete(self.items_left, np.where(self.items_left == rand_idx))
-        indices = {}
-        vals = {}
-        for topic_dir in self.topic_dirs:
-            try:
-                indices[topic_dir] = (max([idx for idx, (k, v) in enumerate(self.data_holder[topic_dir].items()) if
-                                           k < (rand_idx * self.actual_time_length / self.num_samples)]))
-            except ValueError:
-                print(topic_dir,
-                      rand_idx,
-                      self.samples_per_second,
-                      self.num_samples,
-                      self.actual_time_length,
-                      (rand_idx * self.actual_time_length / self.num_samples))
+        print("keys", vals.keys())
 
-            vals[topic_dir] = (self.data_list_holder[topic_dir][indices[topic_dir]][1])
         map_img, map_meta = self.process_map(vals["map"])
-
-        # annotate the input map with pose, goal and path
-        # annotated = self.annotate_map(map_img,
-        #                               map_meta,
-        #                               vals["move_base_GlobalPlanner_plan"],
-        #                               vals["move_base_simple_goal"],
-        #                               vals["unity_ros_husky_TrueState_odom"])
+        gt_map_img, gt_map_meta = self.process_map(vals["ground_truth_planning_map"])
+        print("gt_map_meta", gt_map_meta)
+        print("map_meta", map_meta)
 
         # this one is centered on the robot and of fixed size
         annotated = self.annotate_map_centered(map_img,
                                                map_meta,
                                                vals["move_base_GlobalPlanner_plan"],
-                                               vals["move_base_simple_goal"],
+                                               None,  #TODO (akulkarni) we didn't bag the goal so need to grab it from gt path
                                                vals["unity_ros_husky_TrueState_odom"], verbose=False)
 
+        # resize ground truth map
+        gt_map_img = cv2.resize(gt_map_img, map_img.shape, interpolation=cv2.INTER_AREA)
+        gt_map_meta["resolution"] = map_meta["resolution"]
+
         # annotate the the map with gt path
-        annotated_gt = self.annotate_map_centered(map_img,
-                                                  map_meta,
+        annotated_gt = self.annotate_map_centered(gt_map_img,
+                                                  gt_map_meta,
                                                   vals["ground_truth_planning_move_base_GlobalPlanner_plan"],
                                                   None,
                                                   vals["unity_ros_husky_TrueState_odom"], verbose=False)
+
         # pad the rgb and semantic images
-        curr_rgb = vals["husky_camera_image_raw"]
-        curr_semantic = vals["husky_semantic_camera_image_raw"]
+        curr_rgb = vals["husky_camera_image_raw"][0]
+        curr_semantic = vals["husky_semantic_camera_image_raw"][0]
 
         rgb_padded = np.zeros(annotated.shape)
         rgb_padded[:curr_rgb.shape[0], :curr_rgb.shape[1], :] = curr_rgb
         semantic_padded = np.zeros(annotated.shape)
         semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
 
-        # Make em all channel first, normalize em from -1 to 1
-        # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
-        annotated = np.moveaxis(annotated, 2, 0).astype('float64')
-        # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
-        annotated -= np.min(annotated)
-        annotated *= 2.0 / (np.max(annotated))
-        annotated -= 1.0
-        # print("annotated", annotated.dtype, np.max(annotated), np.min(annotated))
-
-        rgb_padded = np.moveaxis(rgb_padded, 2, 0).astype('float64')
-        rgb_padded -= np.min(rgb_padded)
-        rgb_padded *= 2.0 / (np.max(rgb_padded))
-        rgb_padded -= 1.0
-        # print("rgb_padded", rgb_padded.dtype, np.max(rgb_padded), np.min(rgb_padded))
-
-        semantic_padded = np.moveaxis(semantic_padded, 2, 0).astype('float64')
-        semantic_padded -= np.min(semantic_padded)
-        semantic_padded *= 2.0 / (np.max(semantic_padded))
-        semantic_padded -= 1.0
-        # print("semantic_padded", semantic_padded.dtype, np.max(semantic_padded), np.min(semantic_padded))
-
-        # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
-        annotated_gt = np.moveaxis(annotated_gt, 2, 0).astype('float64')
-        # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
-        annotated_gt -= np.min(annotated_gt)
-        annotated_gt *= 2.0 / (np.max(annotated_gt))
-        annotated_gt -= 1.0
-        # print("annotated_gt", annotated_gt.dtype, np.max(annotated_gt), np.min(annotated_gt))
+        annotated = self.norm_stuff(annotated)
+        annotated_gt = self.norm_stuff(annotated_gt)
+        rgb_padded = self.norm_stuff(rgb_padded)
+        semantic_padded = self.norm_stuff(semantic_padded)
 
         # return !
         return np.array(annotated), np.array(rgb_padded), np.array(semantic_padded), np.array(annotated_gt)
 
 
 if __name__ == "__main__":
-    # np.random.seed(10)
-    N = 10
-    sample_fname = "/home/adarsh/ros-workspaces/cis700_workspace/src/learned_planning_pipeline/bag_harvester/cis700_data_gt/"
-    dset = CIS700Dataset(batch=1, sub_dir=sample_fname)
+    N = 1
+    sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/"
+    dset = CIS700Dataset(sub_dir=sample_fname,
+                         config_file="/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml")
     for i in range(N):
-        annotated, rgb, semantic, out = dset.__getitem__()
+        annotated, rgb, semantic, out = dset.__getitem__(0)
 
         print("annotated shape:", annotated.shape)
         print("rgb shape:", rgb.shape)

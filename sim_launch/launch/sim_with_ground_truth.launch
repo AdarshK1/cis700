@@ -12,7 +12,7 @@
     <remap from="points" to="/husky/depth_camera/points"/>
   </node>
 
-  <node pkg="octomap_server" type="octomap_server_node" name="octomap_server" output="screen">
+  <node pkg="octomap_server" type="octomap_server_node" name="octomap_server" output="screen" respawn="true">
     <remap from="/cloud_in" to="/husky/depth_camera/points"/>
     <remap from="/projected_map" to="/map"/>
     <param name="frame_id" value="world"/>
