@@ -89,7 +89,7 @@ class Net(nn.Module):
         output = F.relu(self.t_conv2(output))
         output = F.relu(self.t_conv3(output))
         output = F.relu(self.t_conv4(output))
-        output = F.relu(self.t_conv5(output))
+        output = self.t_conv5(output)
 
         # print("Output shape:", output.shape)
         output = F.interpolate(output, (occ_plus.shape[2], occ_plus.shape[3]))

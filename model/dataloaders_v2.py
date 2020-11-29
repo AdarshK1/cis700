@@ -7,9 +7,6 @@ import copy
 import cv2
 import sys
 
-# TODO(akulkarni) i realized this whole setup requires that the dataset is held in RAM...that kinda sucks
-# with big datasets so fix that sometime soon (should be doable just refactoring tbh)
-
 sys.path.append("/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils")
 
 from base_data_loader import BaseDataset
@@ -17,7 +14,7 @@ from base_data_loader import BaseDataset
 
 class CIS700Dataset(BaseDataset):
 
-    def __init__(self, config_file, sub_dir, map_size=70, samples_per_second=120, skip_last_n_seconds=2, skip_first_n_seconds=0):
+    def __init__(self, config_file, sub_dir, map_size=70, samples_per_second=120, skip_last_n_seconds=0, skip_first_n_seconds=0):
 
         super().__init__(config_file, sub_dir, samples_per_second=samples_per_second,
                          skip_last_n_seconds=skip_last_n_seconds, skip_first_n_seconds=skip_first_n_seconds)
@@ -159,21 +156,26 @@ class CIS700Dataset(BaseDataset):
         return self.num_samples
 
     def norm_stuff(self, arr):
+        # print(np.min(arr), np.max(arr))
         arr = np.moveaxis(arr, 2, 0).astype('float64')
         arr -= np.min(arr)
-        arr *= 2.0 / (np.max(arr))
+        if np.max(arr) > 0:
+            arr *= 2.0 / (np.max(arr))
+        else:
+            arr *= 2.0
+
         arr -= 1.0
         return arr
 
     def __getitem__(self, idx):
         vals = super().__getitem__(idx)
 
-        print("keys", vals.keys())
+        # print("keys", vals.keys())
 
         map_img, map_meta = self.process_map(vals["map"])
         gt_map_img, gt_map_meta = self.process_map(vals["ground_truth_planning_map"])
-        print("gt_map_meta", gt_map_meta)
-        print("map_meta", map_meta)
+        # print("gt_map_meta", gt_map_meta)
+        # print("map_meta", map_meta)
 
         # this one is centered on the robot and of fixed size
         annotated = self.annotate_map_centered(map_img,
@@ -214,8 +216,8 @@ class CIS700Dataset(BaseDataset):
 if __name__ == "__main__":
     N = 1
     sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/"
-    dset = CIS700Dataset(sub_dir=sample_fname,
-                         config_file="/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml")
+    config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
+    dset = CIS700Dataset(config_file, sample_fname)
     for i in range(N):
         annotated, rgb, semantic, out = dset.__getitem__(0)
 
