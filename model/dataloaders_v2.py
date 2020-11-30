@@ -96,18 +96,6 @@ class CIS700Dataset(BaseDataset):
         annotation_channel = np.full((int(self.map_size / meta["resolution"]),
                                       int(self.map_size / meta["resolution"]), 3), 0, np.uint8)
 
-        for i in range(annotation_channel.shape[0]):
-            for j in range(annotation_channel.shape[1]):
-                world_x = pose[0] + (i * meta["resolution"] - self.map_size / 2)
-                world_y = pose[1] + (j * meta["resolution"] - self.map_size / 2)
-
-                world_map_coords_x = int((world_x - meta["origin_position_x"]) / meta["resolution"])
-                world_map_coords_y = int((world_y - meta["origin_position_y"]) / meta["resolution"])
-                # print(i, j, pose[0], pose[1], world_x, world_y, world_map_coords_x, world_map_coords_y)
-
-                if map_arr.shape[0] > world_map_coords_x > 0 and 0 < world_map_coords_y < map_arr.shape[1]:
-                    annotation_channel[i, j, 0] = map_arr[world_map_coords_x, world_map_coords_y]
-
         # mark goal
         if goal is not None:
             goal_map_coords_x = np.clip(int((goal[0] - pose[0] + self.map_size / 2) / meta["resolution"]),
@@ -125,10 +113,22 @@ class CIS700Dataset(BaseDataset):
             annotation_channel = cv2.circle(annotation_channel,
                                             (goal_map_coords_x, goal_map_coords_y),
                                             5,
-                                            (255, 255, 255),
+                                            (0, 125, 0),
                                             -1)
 
-        # mark path
+        for i in range(annotation_channel.shape[0]):
+            for j in range(annotation_channel.shape[1]):
+                world_x = pose[0] + (i * meta["resolution"] - self.map_size / 2)
+                world_y = pose[1] + (j * meta["resolution"] - self.map_size / 2)
+
+                world_map_coords_x = int((world_x - meta["origin_position_x"]) / meta["resolution"])
+                world_map_coords_y = int((world_y - meta["origin_position_y"]) / meta["resolution"])
+                # print(i, j, pose[0], pose[1], world_x, world_y, world_map_coords_x, world_map_coords_y)
+
+                if map_arr.shape[0] > world_map_coords_x > 0 and 0 < world_map_coords_y < map_arr.shape[1]:
+                    annotation_channel[i, j, 0] = map_arr[world_map_coords_x, world_map_coords_y]
+
+                # mark path
         if path is not None:
             for path_pose in path:
                 path_map_coords_x = np.clip(int((path_pose[0] - pose[0] + self.map_size / 2) / meta["resolution"]),
@@ -144,13 +144,13 @@ class CIS700Dataset(BaseDataset):
                     print("Path cvtd", path_map_coords_x, path_map_coords_y)
 
                 annotation_channel = cv2.circle(annotation_channel, (path_map_coords_x, path_map_coords_y), 2,
-                                                (255, 0, 255), -1)
+                                                (0, 255, 0), -1)
 
         if verbose:
             cv2.imshow("test", annotation_channel)
             cv2.waitKey(1000)
 
-        return annotation_channel
+        return annotation_channel[:, :, :2]
 
     def __len__(self):
         return self.num_samples
@@ -199,9 +199,9 @@ class CIS700Dataset(BaseDataset):
         curr_rgb = vals["husky_camera_image_raw"][0]
         curr_semantic = vals["husky_semantic_camera_image_raw"][0]
 
-        rgb_padded = np.zeros(annotated.shape)
+        rgb_padded = np.zeros((annotated.shape[0], annotated.shape[1], 3))
         rgb_padded[:curr_rgb.shape[0], :curr_rgb.shape[1], :] = curr_rgb
-        semantic_padded = np.zeros(annotated.shape)
+        semantic_padded = np.zeros((annotated.shape[0], annotated.shape[1], 3))
         semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
 
         annotated = self.norm_stuff(annotated)
@@ -214,14 +214,28 @@ class CIS700Dataset(BaseDataset):
 
 
 if __name__ == "__main__":
-    N = 1
-    sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/"
+    N = 75
+    sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201123-191213/"
     config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
     dset = CIS700Dataset(config_file, sample_fname)
+
+    def torch_to_cv2(out):
+        # print(np.min(out), np.max(out))
+        # out = out[:, :, :]
+        out -= np.min(out)
+        out *= 255.0 / (np.max(out))
+        out = np.moveaxis(out, 0, 2)
+        out = np.append(out, np.zeros((out.shape[0], out.shape[1], 1)), axis=2)
+        return out
+
     for i in range(N):
-        annotated, rgb, semantic, out = dset.__getitem__(0)
+        annotated, rgb, semantic, out = dset.__getitem__(i)
 
         print("annotated shape:", annotated.shape)
         print("rgb shape:", rgb.shape)
         print("semantic shape:", semantic.shape)
         print("out shape:", out.shape)
+
+        cv2.imshow("annotated", torch_to_cv2(annotated))
+        cv2.imshow("output", torch_to_cv2(out))
+        cv2.waitKey(100)

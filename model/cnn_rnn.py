@@ -43,7 +43,7 @@ class Net(nn.Module):
         elif occ_net == 152:
             self.occ_resnet = models.resnet152()
         elif occ_net == "other":
-            self.conv1_occ_branch = nn.Conv2d(3, 10, kernel_size=3)
+            self.conv1_occ_branch = nn.Conv2d(2, 10, kernel_size=3)
             self.conv2_occ_branch = nn.Conv2d(10, 20, kernel_size=3)
             self.conv3_occ_branch = nn.Conv2d(20, 40, kernel_size=3)
             self.conv4_occ_branch = nn.Conv2d(40, 80, kernel_size=3)
@@ -52,10 +52,10 @@ class Net(nn.Module):
         self.t_conv2 = nn.ConvTranspose2d(80, 40, 2, stride=2)
         self.t_conv3 = nn.ConvTranspose2d(40, 20, 2, stride=2)
         self.t_conv4 = nn.ConvTranspose2d(20, 10, 2, stride=2)
-        self.t_conv5 = nn.ConvTranspose2d(10, 3, 2, stride=1)
+        self.t_conv5 = nn.ConvTranspose2d(10, 2, 2, stride=1)
 
     '''
-    rgb is just an rgb image, occ_plus is a 3 channel data structure with the occupancy grid, suggested path and 
+    rgb is just an rgb image, occ_plus is a 2 channel data structure with the occupancy grid, suggested path and 
     goal all encoded in the different channels
     '''
     def forward(self, rgb, occ_plus):

@@ -16,14 +16,14 @@ import random
 
 # eventually we can do sweeps with this setup
 hyperparameter_defaults = dict(
-    batch_size=32,
+    batch_size=96,
     learning_rate=0.001,
-    weight_decay=0.00005,
-    epochs=150,
-    test_iters=15,
-    num_workers=32,
+    weight_decay=0.0005,
+    epochs=10,
+    test_iters=50,
+    num_workers=48,
     map_size=70,
-    loaders_from_scratch=False,
+    loaders_from_scratch=True,
     test_only=False
 )
 
@@ -36,9 +36,10 @@ net = Net().cuda().float()
 optimizer = optim.Adam(net.parameters(), lr=config.learning_rate, betas=(0.9, 0.999), eps=1e-8,
                        weight_decay=config.weight_decay, amsgrad=False)
 
-criterion = nn.MSELoss()
+criterion = nn.L1Loss(reduction="sum")
 
 test_filename_stub = "imgs/epoch_{}_{}.png"
+train_filename_stub = "imgs/epoch_{}_{}_{}.png"
 
 train_loaders = []
 test_loaders = []
@@ -83,7 +84,7 @@ if config.loaders_from_scratch:
             train_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
                                             batch_size=config.batch_size,
                                             num_workers=config.num_workers, shuffle=True))
-        pickle.dump(train_loaders, open("train_loaders.pkl", 'wb'))
+        # pickle.dump(train_loaders, open("train_loaders.pkl", 'wb'))
 
     for sdir in test_sub_dirs:
         # no idea why it fails sometimes, here's a cheap hack
@@ -94,7 +95,7 @@ if config.loaders_from_scratch:
             test_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
                                            batch_size=1, shuffle=True))
 
-        pickle.dump(test_loaders, open("test_loaders.pkl", 'wb'))
+        # pickle.dump(test_loaders, open("test_loaders.pkl", 'wb'))
 else:
     train_loaders = pickle.load(open("train_loaders.pkl", 'rb'))
     random.shuffle(train_loaders)
@@ -108,21 +109,25 @@ if config.test_only:
         torch.load(
             "/home/adarsh/ros-workspaces/cis700_workspace/src/cis700/model/models/model_0.ckpt"))
 
+# let's do and save some viz stuff
+def torch_to_cv2(out):
+    # print(np.min(out), np.max(out))
+    out = out.numpy()[0, :, :, :]
+    out -= np.min(out)
+    out *= 255.0 / (np.max(out))
+    out = np.moveaxis(out, 0, 2)
+    out = np.append(out, np.zeros((out.shape[0], out.shape[1], 1)), axis=2)
+    return out
+
+
 # train !
 for epoch in range(config.epochs):
     if not config.test_only:
         random.shuffle(train_loaders)
         for train_loader in train_loaders:
-            # print(len(train_loader))
-
             for i_batch, sample_batched in enumerate(train_loader):
                 t1 = time.time()
                 annotated, rgb, semantic, out = sample_batched
-
-                # print("annotated shape:", annotated.shape)
-                # print("rgb shape:", rgb.shape)
-                # print("semantic shape:", semantic.shape)
-                # print("out shape:", out.shape)
 
                 optimizer.zero_grad()  # zero the gradient buffers
 
@@ -136,7 +141,7 @@ for epoch in range(config.epochs):
                 output = net(rgb_tensor.cuda(), annotated_tensor.cuda())
 
                 # hack because i like big numbers
-                loss = 4 * criterion(output.cpu().float(), out_tensor)
+                loss = criterion(output.cpu().float(), out_tensor)
 
                 wandb.log({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(), 'loader': train_loader.dataset.data_dir})
                 print({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(), 'loader': train_loader.dataset.data_dir})
@@ -145,10 +150,27 @@ for epoch in range(config.epochs):
                 loss.backward()
                 optimizer.step()  # Does the update
 
-                backup_path = "models_v2/model.ckpt"
+                backup_path = "models_v4/model.ckpt"
                 torch.save(net.state_dict(), backup_path)
                 t2 = time.time()
-                # print("dataload time", t2 - t1)
+
+                if i_batch % 10 == 0:
+                    out_gt = torch_to_cv2(out)
+                    cv2.imwrite(train_filename_stub.format(epoch, i_batch, "train_out_gt"), out_gt)
+                    wandb.log({"train_out_gt": [wandb.Image(out_gt, caption=str(epoch))]})
+
+                    annotated_disp = torch_to_cv2(annotated)
+                    cv2.imwrite(train_filename_stub.format(epoch, i_batch, "train_annotated"), annotated_disp)
+                    wandb.log({"train_annotated": [wandb.Image(annotated, caption=str(epoch))]})
+
+                    out_pred = torch_to_cv2(output.cpu().detach().float())
+                    cv2.imwrite(train_filename_stub.format(epoch, i_batch, "train_out_pred"), out_pred)
+                    wandb.log({"train_out_pred": [wandb.Image(out_pred, caption=str(epoch))]})
+
+                    cv2.imshow("out_gt", out_gt)
+                    cv2.imshow("annotated", annotated_disp)
+                    cv2.imshow("out_pred", out_pred)
+                    cv2.waitKey(1000)
 
     random.shuffle(test_loaders)
     for test_loader in test_loaders:
@@ -169,29 +191,20 @@ for epoch in range(config.epochs):
             output = net(rgb_tensor.cuda(), annotated_tensor.cuda())
 
             # hack because i like big numbers
-            loss = 4 * criterion(output.cpu().float(), out_tensor)
+            loss = criterion(output.cpu().float(), out_tensor)
             losses += loss.item()
 
-            # let's do and save some viz stuff
-            def torch_to_cv2(out):
-                # print(np.min(out), np.max(out))
-                out = out.numpy()[0, :, :, :]
-                out -= np.min(out)
-                out *= 255.0 / (np.max(out))
-                out = np.moveaxis(out, 0, 2)
-                return out
-
             out_gt = torch_to_cv2(out)
-            cv2.imwrite(test_filename_stub.format(epoch, "out_gt"), out_gt)
-            wandb.log({"out_gt": [wandb.Image(out_gt, caption=str(epoch))]})
+            cv2.imwrite(test_filename_stub.format(epoch, "test_out_gt"), out_gt)
+            wandb.log({"test_out_gt": [wandb.Image(out_gt, caption=str(epoch))]})
 
             annotated_disp = torch_to_cv2(annotated)
-            cv2.imwrite(test_filename_stub.format(epoch, "annotated"), annotated_disp)
-            wandb.log({"annotated": [wandb.Image(annotated, caption=str(epoch))]})
+            cv2.imwrite(test_filename_stub.format(epoch, "test_annotated"), annotated_disp)
+            wandb.log({"test_annotated": [wandb.Image(annotated, caption=str(epoch))]})
 
             out_pred = torch_to_cv2(output.cpu().detach().float())
-            cv2.imwrite(test_filename_stub.format(epoch, "out_pred"), out_pred)
-            wandb.log({"out_pred": [wandb.Image(out_pred, caption=str(epoch))]})
+            cv2.imwrite(test_filename_stub.format(epoch, "test_out_pred"), out_pred)
+            wandb.log({"test_out_pred": [wandb.Image(out_pred, caption=str(epoch))]})
 
             wandb.log({'test_loss': losses / config.test_iters})
             print({'test_loss': loss})
