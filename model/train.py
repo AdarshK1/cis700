@@ -16,12 +16,12 @@ import random
 
 # eventually we can do sweeps with this setup
 hyperparameter_defaults = dict(
-    batch_size=96,
+    batch_size=64,
     learning_rate=0.001,
     weight_decay=0.0005,
     epochs=10,
     test_iters=50,
-    num_workers=48,
+    num_workers=16,
     map_size=70,
     loaders_from_scratch=True,
     test_only=False
@@ -38,12 +38,32 @@ optimizer = optim.Adam(net.parameters(), lr=config.learning_rate, betas=(0.9, 0.
 
 criterion = nn.L1Loss(reduction="sum")
 
+
+def weighted_mse(output, target):
+    weight = np.ones(target.shape)
+    weight[target==1] = 100
+
+    weight = torch.from_numpy(weight)
+    loss = torch.sum(weight * (output - target) ** 2)
+    return loss
+
+
+def weighted_l1(output, target):
+    weight = np.ones(target.shape)
+    weight[target==1] = 100
+
+    weight = torch.from_numpy(weight)
+    loss = torch.sum(weight * torch.abs(output - target))
+    return loss
+
+
+criterion = weighted_l1
+
 test_filename_stub = "imgs/epoch_{}_{}.png"
 train_filename_stub = "imgs/epoch_{}_{}_{}.png"
 
 train_loaders = []
 test_loaders = []
-
 
 if config.loaders_from_scratch:
     # instantiate the datasets
@@ -73,18 +93,18 @@ if config.loaders_from_scratch:
     ]
 
     config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
-
-    for sdir in train_sub_dirs:
-        # no idea why it fails sometimes, here's a cheap hack
-        try:
-            train_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
-                                            batch_size=config.batch_size,
-                                            num_workers=config.num_workers, shuffle=True))
-        except ValueError:
-            train_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
-                                            batch_size=config.batch_size,
-                                            num_workers=config.num_workers, shuffle=True))
-        # pickle.dump(train_loaders, open("train_loaders.pkl", 'wb'))
+    if not config.test_only:
+        for sdir in train_sub_dirs:
+            # no idea why it fails sometimes, here's a cheap hack
+            try:
+                train_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
+                                                batch_size=config.batch_size,
+                                                num_workers=config.num_workers, shuffle=True))
+            except ValueError:
+                train_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
+                                                batch_size=config.batch_size,
+                                                num_workers=config.num_workers, shuffle=True))
+            # pickle.dump(train_loaders, open("train_loaders.pkl", 'wb'))
 
     for sdir in test_sub_dirs:
         # no idea why it fails sometimes, here's a cheap hack
@@ -103,11 +123,11 @@ else:
     test_loaders = pickle.load(open("test_loaders.pkl", 'rb'))
     random.shuffle(test_loaders)
 
+# if config.test_only:
+#     net.load_state_dict(
+#         torch.load(
+#             "/home/adarsh/ros-workspaces/cis700_workspace/src/cis700/model/models/model_0.ckpt"))
 
-if config.test_only:
-    net.load_state_dict(
-        torch.load(
-            "/home/adarsh/ros-workspaces/cis700_workspace/src/cis700/model/models/model_0.ckpt"))
 
 # let's do and save some viz stuff
 def torch_to_cv2(out):
@@ -143,14 +163,16 @@ for epoch in range(config.epochs):
                 # hack because i like big numbers
                 loss = criterion(output.cpu().float(), out_tensor)
 
-                wandb.log({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(), 'loader': train_loader.dataset.data_dir})
-                print({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(), 'loader': train_loader.dataset.data_dir})
+                wandb.log({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(),
+                           'loader': train_loader.dataset.data_dir})
+                print({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(),
+                       'loader': train_loader.dataset.data_dir})
 
                 # backprop
                 loss.backward()
                 optimizer.step()  # Does the update
 
-                backup_path = "models_v4/model.ckpt"
+                backup_path = "models_v5/model.ckpt"
                 torch.save(net.state_dict(), backup_path)
                 t2 = time.time()
 
