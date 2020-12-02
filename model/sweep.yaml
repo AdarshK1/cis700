@@ -1,0 +1,9 @@
+program: train.py
+method: bayes
+metric:
+  name: loss
+  goal: minimize
+parameters:
+  weight_val:
+    min: 10
+    max: 200

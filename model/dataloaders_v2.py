@@ -155,16 +155,20 @@ class CIS700Dataset(BaseDataset):
     def __len__(self):
         return self.num_samples
 
-    def norm_stuff(self, arr):
+    def norm_stuff(self, arr, zero_to_one=False):
         # print(np.min(arr), np.max(arr))
         arr = np.moveaxis(arr, 2, 0).astype('float64')
         arr -= np.min(arr)
-        if np.max(arr) > 0:
-            arr *= 2.0 / (np.max(arr))
-        else:
-            arr *= 2.0
 
-        arr -= 1.0
+        if not zero_to_one:
+            if np.max(arr) > 0:
+                arr *= 2.0 / (np.max(arr))
+            else:
+                arr *= 2.0
+            arr -= 1.0
+        else:
+            if np.max(arr) > 0:
+                arr *= 1.0 / (np.max(arr))
         return arr
 
     def __getitem__(self, idx):
@@ -205,7 +209,7 @@ class CIS700Dataset(BaseDataset):
         semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
 
         annotated = self.norm_stuff(annotated)
-        annotated_gt = self.norm_stuff(annotated_gt)
+        annotated_gt = self.norm_stuff(annotated_gt, zero_to_one=True)
         rgb_padded = self.norm_stuff(rgb_padded)
         semantic_padded = self.norm_stuff(semantic_padded)
 

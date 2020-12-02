@@ -62,19 +62,29 @@ class Net(nn.Module):
 
         if self.rgb_model_type == "other":
             # rgb encoder
+            # print(rgb.shape)
             rgb_branch = F.relu(F.max_pool2d(self.conv1_rgb_branch(rgb), 2))
+            # print(rgb_branch.shape)
             rgb_branch = F.relu(F.max_pool2d(self.conv2_rgb_branch(rgb_branch), 2))
+            # print(rgb_branch.shape)
             rgb_branch = F.relu(F.max_pool2d(self.conv3_rgb_branch(rgb_branch), 2))
+            # print(rgb_branch.shape)
             rgb_branch = F.relu(F.max_pool2d(self.conv4_rgb_branch(rgb_branch), 2))
+            # print(rgb_branch.shape)
         else:
             rgb_branch = self.rgb_resnet(rgb)
 
         # occ encoder
         if self.occ_model_type == "other":
+            # print(occ_plus.shape)
             occ_branch = F.relu(F.max_pool2d(self.conv1_occ_branch(occ_plus), 2))
+            # print(occ_branch.shape)
             occ_branch = F.relu(F.max_pool2d(self.conv2_occ_branch(occ_branch), 2))
+            # print(occ_branch.shape)
             occ_branch = F.relu(F.max_pool2d(self.conv3_occ_branch(occ_branch), 2))
+            # print(occ_branch.shape)
             occ_branch = F.relu(F.max_pool2d(self.conv4_occ_branch(occ_branch), 2))
+            # print(occ_branch.shape)
         else:
             occ_branch = self.occ_resnet(occ_plus)
 
@@ -86,10 +96,20 @@ class Net(nn.Module):
         # print("concatenated shape:", concatenated.shape)
 
         output = F.relu(self.t_conv1(concatenated))
+        # print(output.shape)
         output = F.relu(self.t_conv2(output))
+        # print(output.shape)
         output = F.relu(self.t_conv3(output))
+        # print(output.shape)
         output = F.relu(self.t_conv4(output))
-        output = self.t_conv5(output)
+        # print(output.shape)
+
+        # when doing regression
+        # output = self.t_conv5(output)
+
+        # when categorical
+        output = F.sigmoid(self.t_conv5(output))
+        # print(output.shape)
 
         # print("Output shape:", output.shape)
         output = F.interpolate(output, (occ_plus.shape[2], occ_plus.shape[3]))

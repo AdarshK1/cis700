@@ -13,22 +13,33 @@ import sys
 import cv2
 import pickle
 import random
+from datetime import datetime
+import os
 
 # eventually we can do sweeps with this setup
 hyperparameter_defaults = dict(
     batch_size=64,
+    # batch_size=16,
     learning_rate=0.001,
     weight_decay=0.0005,
     epochs=10,
     test_iters=50,
-    num_workers=16,
+    num_workers=48,
+    # num_workers=16,
     map_size=70,
     loaders_from_scratch=True,
-    test_only=False
+    test_only=False,
+    weight_val=50
 )
 
-wandb.init(project="cis700", config=hyperparameter_defaults)
+dt = datetime.now().strftime("%m_%d_%H_%M")
+name_str = "_less_weighted_bce_v2"
+wandb.init(project="cis700", config=hyperparameter_defaults, name=dt+name_str)
 config = wandb.config
+
+backup_dir = "models_v6/" + dt + name_str
+
+os.makedirs(backup_dir, exist_ok=True)
 
 net = Net().cuda().float()
 
@@ -36,7 +47,7 @@ net = Net().cuda().float()
 optimizer = optim.Adam(net.parameters(), lr=config.learning_rate, betas=(0.9, 0.999), eps=1e-8,
                        weight_decay=config.weight_decay, amsgrad=False)
 
-criterion = nn.L1Loss(reduction="sum")
+# criterion = nn.L1Loss(reduction="sum")
 
 
 def weighted_mse(output, target):
@@ -48,16 +59,36 @@ def weighted_mse(output, target):
     return loss
 
 
-def weighted_l1(output, target):
+def weighted_l1(output, target, weight_val=config.weight_val):
     weight = np.ones(target.shape)
-    weight[target==1] = 100
-
+    weight[target != 0] = weight_val
     weight = torch.from_numpy(weight)
+
     loss = torch.sum(weight * torch.abs(output - target))
     return loss
 
 
-criterion = weighted_l1
+def weighted_bce(output, target, weight_val=config.weight_val):
+    weight = np.ones(target.shape)
+    weight[target != 0] = weight_val
+    weight = torch.from_numpy(weight)
+    eps = 0.001
+    # print(torch.log(output + eps))
+    # print(torch.log(1 - output + eps))
+    # print(target.shape)
+    # print(torch.max(target), torch.min(target))
+    # print(output.shape)
+    bce = -(target * weight * torch.log(output + eps) + (1 - target) * torch.log(1 - output + eps))
+
+    return torch.sum(bce)
+
+
+def weighted_combo(output, target, weight_val=config.weight_val):
+    return weighted_bce(output, target, weight_val) + weighted_l1(output, target, weight_val)
+
+# criterion = weighted_l1
+criterion = weighted_bce
+# criterion = weighted_combo
 
 test_filename_stub = "imgs/epoch_{}_{}.png"
 train_filename_stub = "imgs/epoch_{}_{}_{}.png"
@@ -69,6 +100,7 @@ if config.loaders_from_scratch:
     # instantiate the datasets
     train_sub_dirs = [
         "/home/adarsh/HDD1/cis700_final/processed/20201123-191213/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
         # "/home/adarsh/HDD1/cis700_final/processed/20201123-203837/",
         # "/home/adarsh/HDD1/cis700_final/processed/20201123-194327/",
         # "/home/adarsh/HDD1/cis700_final/processed/20201123-191455/",
@@ -130,12 +162,17 @@ else:
 
 
 # let's do and save some viz stuff
-def torch_to_cv2(out):
+def torch_to_cv2(out, single_channel=False):
     # print(np.min(out), np.max(out))
-    out = out.numpy()[0, :, :, :]
+    rand_batch_idx = int(np.random.random() * out.shape[0])
+    out = out.numpy()[rand_batch_idx, :, :, :]
     out -= np.min(out)
     out *= 255.0 / (np.max(out))
     out = np.moveaxis(out, 0, 2)
+
+    if single_channel:
+        return out[:, :, 1]
+
     out = np.append(out, np.zeros((out.shape[0], out.shape[1], 1)), axis=2)
     return out
 
@@ -160,8 +197,7 @@ for epoch in range(config.epochs):
                 # forward! doesn't use semantic rn but we have it i guess
                 output = net(rgb_tensor.cuda(), annotated_tensor.cuda())
 
-                # hack because i like big numbers
-                loss = criterion(output.cpu().float(), out_tensor)
+                loss = criterion(output.cpu().float()[:, 1, :, :], out_tensor[:, 1, :, :])
 
                 wandb.log({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(),
                            'loader': train_loader.dataset.data_dir})
@@ -172,7 +208,8 @@ for epoch in range(config.epochs):
                 loss.backward()
                 optimizer.step()  # Does the update
 
-                backup_path = "models_v5/model.ckpt"
+                backup_path = backup_dir + "/model.ckpt"
+
                 torch.save(net.state_dict(), backup_path)
                 t2 = time.time()
 
@@ -185,14 +222,14 @@ for epoch in range(config.epochs):
                     cv2.imwrite(train_filename_stub.format(epoch, i_batch, "train_annotated"), annotated_disp)
                     wandb.log({"train_annotated": [wandb.Image(annotated, caption=str(epoch))]})
 
-                    out_pred = torch_to_cv2(output.cpu().detach().float())
+                    out_pred = torch_to_cv2(output.cpu().detach().float(), single_channel=True)
                     cv2.imwrite(train_filename_stub.format(epoch, i_batch, "train_out_pred"), out_pred)
                     wandb.log({"train_out_pred": [wandb.Image(out_pred, caption=str(epoch))]})
 
-                    cv2.imshow("out_gt", out_gt)
-                    cv2.imshow("annotated", annotated_disp)
-                    cv2.imshow("out_pred", out_pred)
-                    cv2.waitKey(1000)
+                    # cv2.imshow("out_gt", out_gt)
+                    # cv2.imshow("annotated", annotated_disp)
+                    # cv2.imshow("out_pred", out_pred)
+                    # cv2.waitKey(1000)
 
     random.shuffle(test_loaders)
     for test_loader in test_loaders:
@@ -232,10 +269,10 @@ for epoch in range(config.epochs):
             print({'test_loss': loss})
 
             # if i_batch == 0:
-            cv2.imshow("out_gt", out_gt)
-            cv2.imshow("annotated", annotated_disp)
-            cv2.imshow("out_pred", out_pred)
-            cv2.waitKey(1000)
+            # cv2.imshow("out_gt", out_gt)
+            # cv2.imshow("annotated", annotated_disp)
+            # cv2.imshow("out_pred", out_pred)
+            # cv2.waitKey(1000)
 
     PATH = "models/model_{}.ckpt".format(epoch)
     torch.save(net.state_dict(), PATH)
