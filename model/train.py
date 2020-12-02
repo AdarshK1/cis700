@@ -6,7 +6,7 @@ import torchvision
 import numpy as np
 import wandb
 from cnn_rnn import Net
-from dataloaders_v2 import CIS700Dataset
+from dataloaders_v2 import CIS700Dataset, CIS700Pickled
 from torch.utils.data import DataLoader
 import time
 import sys
@@ -24,17 +24,19 @@ hyperparameter_defaults = dict(
     weight_decay=0.0005,
     epochs=10,
     test_iters=50,
-    num_workers=48,
+    num_workers=32,
     # num_workers=16,
     map_size=70,
     loaders_from_scratch=True,
     test_only=False,
-    weight_val=50
+    weight_val=50,
+    samples_per_second=30,
+    pickle_batches=True
 )
 
 dt = datetime.now().strftime("%m_%d_%H_%M")
 name_str = "_less_weighted_bce_v2"
-wandb.init(project="cis700", config=hyperparameter_defaults, name=dt+name_str)
+wandb.init(project="cis700", config=hyperparameter_defaults, name=dt + name_str)
 config = wandb.config
 
 backup_dir = "models_v6/" + dt + name_str
@@ -47,12 +49,13 @@ net = Net().cuda().float()
 optimizer = optim.Adam(net.parameters(), lr=config.learning_rate, betas=(0.9, 0.999), eps=1e-8,
                        weight_decay=config.weight_decay, amsgrad=False)
 
+
 # criterion = nn.L1Loss(reduction="sum")
 
 
 def weighted_mse(output, target):
     weight = np.ones(target.shape)
-    weight[target==1] = 100
+    weight[target == 1] = 100
 
     weight = torch.from_numpy(weight)
     loss = torch.sum(weight * (output - target) ** 2)
@@ -72,7 +75,7 @@ def weighted_bce(output, target, weight_val=config.weight_val):
     weight = np.ones(target.shape)
     weight[target != 0] = weight_val
     weight = torch.from_numpy(weight)
-    eps = 0.001
+    eps = 0.0001
     # print(torch.log(output + eps))
     # print(torch.log(1 - output + eps))
     # print(target.shape)
@@ -86,6 +89,7 @@ def weighted_bce(output, target, weight_val=config.weight_val):
 def weighted_combo(output, target, weight_val=config.weight_val):
     return weighted_bce(output, target, weight_val) + weighted_l1(output, target, weight_val)
 
+
 # criterion = weighted_l1
 criterion = weighted_bce
 # criterion = weighted_combo
@@ -96,64 +100,80 @@ train_filename_stub = "imgs/epoch_{}_{}_{}.png"
 train_loaders = []
 test_loaders = []
 
+# instantiate the datasets
+train_sub_dirs = [
+    "/home/adarsh/HDD1/cis700_final/processed/20201123-191213/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-203837/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-194327/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-191455/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-195338/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201124-034641/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-191855/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-203414/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201124-034755/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201124-034541/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-194129/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-193111/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-190511/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-190958/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-190928/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-184629/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-195448/",
+    # "/home/adarsh/HDD1/cis700_final/processed/20201123-194224/",
+]
+
+test_sub_dirs = [
+    "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
+]
+
+config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
+
 if config.loaders_from_scratch:
-    # instantiate the datasets
-    train_sub_dirs = [
-        "/home/adarsh/HDD1/cis700_final/processed/20201123-191213/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-203837/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-194327/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-191455/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-195338/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034641/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-191855/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-203414/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034755/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034541/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-194129/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-193111/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-190511/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-190958/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-190928/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-184629/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-195448/",
-        # "/home/adarsh/HDD1/cis700_final/processed/20201123-194224/",
-    ]
-
-    test_sub_dirs = [
-        "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
-    ]
-
-    config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
     if not config.test_only:
         for sdir in train_sub_dirs:
             # no idea why it fails sometimes, here's a cheap hack
             try:
-                train_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
-                                                batch_size=config.batch_size,
-                                                num_workers=config.num_workers, shuffle=True))
+                train_loaders.append(DataLoader(
+                    CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
+                                  map_size=config.map_size),
+                    batch_size=config.batch_size,
+                    num_workers=config.num_workers, shuffle=True))
             except ValueError:
-                train_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
-                                                batch_size=config.batch_size,
-                                                num_workers=config.num_workers, shuffle=True))
+                train_loaders.append(DataLoader(
+                    CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
+                                  map_size=config.map_size),
+                    batch_size=config.batch_size,
+                    num_workers=config.num_workers, shuffle=True))
             # pickle.dump(train_loaders, open("train_loaders.pkl", 'wb'))
 
     for sdir in test_sub_dirs:
         # no idea why it fails sometimes, here's a cheap hack
         try:
-            test_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
-                                           batch_size=1, shuffle=True))
+            test_loaders.append(DataLoader(
+                CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
+                              map_size=config.map_size),
+                batch_size=1, shuffle=True))
         except ValueError:
-            test_loaders.append(DataLoader(CIS700Dataset(config_file, sdir, map_size=config.map_size),
-                                           batch_size=1, shuffle=True))
+            test_loaders.append(DataLoader(
+                CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
+                              map_size=config.map_size),
+                batch_size=1, shuffle=True))
 
         # pickle.dump(test_loaders, open("test_loaders.pkl", 'wb'))
 else:
-    train_loaders = pickle.load(open("train_loaders.pkl", 'rb'))
-    random.shuffle(train_loaders)
+    if not config.test_only:
+        for sdir in train_sub_dirs:
+            try:
+                train_loaders.append(DataLoader(CIS700Pickled(sdir.replace("processed", "pickled")),
+                                                batch_size=config.batch_size,
+                                                num_workers=config.num_workers, shuffle=True))
 
-    test_loaders = pickle.load(open("test_loaders.pkl", 'rb'))
-    random.shuffle(test_loaders)
+    for sdir in test_sub_dirs:
+        try:
+            test_loaders.append(DataLoader(CIS700Pickled(sdir.replace("processed", "pickled")),
+                                           batch_size=1, shuffle=True))
+
 
 # if config.test_only:
 #     net.load_state_dict(
@@ -183,6 +203,15 @@ for epoch in range(config.epochs):
         random.shuffle(train_loaders)
         for train_loader in train_loaders:
             for i_batch, sample_batched in enumerate(train_loader):
+
+                if config.pickle_batches:
+                    pickle_dir = train_loader.dataset.data_dir.replace("processed", "pickled")
+                    os.makedirs(pickle_dir, exist_ok=True)
+                    pickle_fname = (pickle_dir + "{:0>6d}.pkl").format(i_batch)
+                    pickle.dump(sample_batched, open(pickle_fname, 'wb'))
+                    print("dumped", pickle_fname)
+                    continue
+
                 t1 = time.time()
                 annotated, rgb, semantic, out = sample_batched
 

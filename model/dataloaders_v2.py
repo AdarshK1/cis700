@@ -6,6 +6,7 @@ from torchvision import transforms, utils
 import copy
 import cv2
 import sys
+import pickle
 
 sys.path.append("/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils")
 
@@ -14,7 +15,8 @@ from base_data_loader import BaseDataset
 
 class CIS700Dataset(BaseDataset):
 
-    def __init__(self, config_file, sub_dir, map_size=70, samples_per_second=120, skip_last_n_seconds=0, skip_first_n_seconds=0):
+    def __init__(self, config_file, sub_dir, map_size=70, samples_per_second=120, skip_last_n_seconds=0,
+                 skip_first_n_seconds=0):
 
         super().__init__(config_file, sub_dir, samples_per_second=samples_per_second,
                          skip_last_n_seconds=skip_last_n_seconds, skip_first_n_seconds=skip_first_n_seconds)
@@ -185,7 +187,8 @@ class CIS700Dataset(BaseDataset):
         annotated = self.annotate_map_centered(map_img,
                                                map_meta,
                                                vals["move_base_GlobalPlanner_plan"],
-                                               None,  #TODO (akulkarni) we didn't bag the goal so need to grab it from gt path
+                                               None,
+                                               # TODO (akulkarni) we didn't bag the goal so need to grab it from gt path
                                                vals["unity_ros_husky_TrueState_odom"], verbose=False)
 
         # resize ground truth map
@@ -217,11 +220,26 @@ class CIS700Dataset(BaseDataset):
         return np.array(annotated), np.array(rgb_padded), np.array(semantic_padded), np.array(annotated_gt)
 
 
+class CIS700Pickled(Dataset):
+
+    def __init__(self, pickle_dir="/home/adarsh/HDD1/cis700_final/pickled/20201124-034755/"):
+        self.dir = pickle_dir
+
+        self.filenames = sorted(glob.glob(self.dir))
+
+    def __len__(self):
+        return len(self.filenames)
+
+    def __getitem__(self, idx):
+        return pickle.load(self.filenames[idx])
+
+
 if __name__ == "__main__":
     N = 75
     sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201123-191213/"
     config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
     dset = CIS700Dataset(config_file, sample_fname)
+
 
     def torch_to_cv2(out):
         # print(np.min(out), np.max(out))
@@ -231,6 +249,7 @@ if __name__ == "__main__":
         out = np.moveaxis(out, 0, 2)
         out = np.append(out, np.zeros((out.shape[0], out.shape[1], 1)), axis=2)
         return out
+
 
     for i in range(N):
         annotated, rgb, semantic, out = dset.__getitem__(i)
