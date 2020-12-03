@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 import rospy
-from nav_msgs.msg import Path
-from nav_msgs.msg import OccupancyGrid
+from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import Path, OccupancyGrid
 import reeds_shepp as rs
 import dubins
 import numpy as np
@@ -12,6 +12,7 @@ from copy import deepcopy
 import itertools
 # import fileinput
 # import cProfile
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 
 class Node:
@@ -34,8 +35,8 @@ class Node:
     def __lt__(self, other):
         return (self.f, -self.g) < (other.f, -other.g)
 
-    def __repr__(self):
-        return f"Node g={self.g}, h={self.h}, state={self.state}, parent={self.parent}, is_closed={self.is_closed}, index={self.index}, parent_index={self.parent_index}"
+    # def __repr__(self):
+    #     return f"Node g={self.g}, h={self.h}, state={self.state}, parent={self.parent}, is_closed={self.is_closed}, index={self.index}, parent_index={self.parent_index}"
 
 
 class MotionPrimitive():
@@ -44,7 +45,7 @@ class MotionPrimitive():
         self.end_state = end_state
         self.turning_radius = .3
         self.path = dubins.shortest_path(self.start_state, self.end_state, self.turning_radius)
-        self.cost = self.path.path_length()
+        self.cost = self.path.path_length() + .1*abs((self.end_state[2] -self.start_state[2])%(np.pi))
         # self.cost = rs.path_length(self.start_state, self.end_state, self.turning_radius)
 
     def get_sampled_position(self, step_size=1):
@@ -59,9 +60,12 @@ class StateLattice:
         self.octomap_launch = None
         self.gt_occ_grid = None
         self.queue = []      # A priority queue of nodes as a heapq.
-        self.goal_tolerance = 10.
+        self.goal_tolerance = 2.
+        self.mp_length = 5
+        self.num_mps_per_spatial_dim = 5
         self.path_sub = rospy.Subscriber("ground_truth_planning/move_base/GlobalPlanner/plan", Path, self.path_callback)
         self.map_sub = rospy.Subscriber("ground_truth_planning/map", OccupancyGrid, self.occ_grid_callback)
+        self.path_pub = rospy.Publisher("ground_truth_planning/mp_sampled_path", Path, queue_size=100)
 
     def occ_grid_callback(self, msg):
         self.gt_occ_grid = msg
@@ -81,16 +85,36 @@ class StateLattice:
             return True
         return False
 
+    def create_nav_path(self, path):
+        nav_path = Path()
+        nav_path.header.stamp = rospy.Time.now()
+        nav_path.header.frame_id = "world"
+        for sample in path:
+            ps = PoseStamped()
+            ps.header = nav_path.header
+            ps.pose.position.x = sample[0]
+            ps.pose.position.y = sample[1]
+            q = quaternion_from_euler(0,0,sample[2])
+            ps.pose.orientation.x = q[0]
+            ps.pose.orientation.y = q[1]
+            ps.pose.orientation.z = q[2]
+            ps.pose.orientation.w = q[3]
+            nav_path.poses.append(ps)
+        return nav_path
+
     def path_callback(self, msg):
-        waypoints = np.array([[pose.pose.position.x, pose.pose.position.y, 0] for pose in msg.poses])  # TODO convert yaw correctly
+        waypoints = np.array([[pose.pose.position.x, pose.pose.position.y, euler_from_quaternion([pose.pose.orientation.x,pose.pose.orientation.y,pose.pose.orientation.z,pose.pose.orientation.w])[2]] for pose in msg.poses])
         if waypoints.shape[0] > 0:
             # self.path_sub.unregister()
             self.start_state = waypoints[0, :]
             self.goal_state = waypoints[-1, :]
             print(self.start_state, self.goal_state)
             path, sampled_path, path_cost, nodes_expanded = self.graph_search()
-            self.plot_path(path, sampled_path, path_cost)
-            plt.show()
+
+            nav_path = self.create_nav_path(sampled_path)
+            self.path_pub.publish(nav_path)
+            # self.plot_path(path, sampled_path, path_cost)
+            # plt.show()
             # rospy.signal_shutdown("ran graph search once")
 
     def heuristic(self, state):
@@ -115,7 +139,7 @@ class StateLattice:
         while node.parent is not None:
             path.append(node.parent)
             mp = node.mp
-            sampled_path.append(np.array(mp.get_sampled_position()))
+            sampled_path.append(np.array(mp.get_sampled_position(step_size=.1)))
             path_cost += mp.cost
             node = self.node_dict[node.parent.tobytes()]
         path.reverse()
@@ -131,7 +155,7 @@ class StateLattice:
 
         if sampled_path is not None:
             ax.plot(sampled_path[:, 0], sampled_path[:, 1], zorder=4)
-            print(f'cost: {path_cost}')
+            # print(f'cost: {path_cost}')
             ax.plot(path[0, :], path[1, :], 'go', zorder=4)
 
         ax.add_patch(plt.Circle(self.goal_state[:2], self.goal_tolerance, color='b', fill=False, zorder=5))
@@ -144,6 +168,10 @@ class StateLattice:
         x_coords = np.arange(self.grid_origin[0], self.grid_origin[0]+(self.grid_dims[0]+1)*self.grid_resolution, self.grid_resolution)
         y_coords = np.arange(self.grid_origin[1], self.grid_origin[1]+(self.grid_dims[1]+1)*self.grid_resolution, self.grid_resolution)
         plt.pcolormesh(y_coords, x_coords, -self.grid, zorder=1, cmap='gray')
+        ax.set_aspect("equal")
+        buf = 20
+        ax.set_xlim(min(sampled_path[:, 0])-buf, max(sampled_path[:, 0])+buf)
+        ax.set_ylim(min(sampled_path[:, 1])-buf, max(sampled_path[:, 1])+buf)
 
     def is_mp_collision_free(self, mp):
         samples = mp.get_sampled_position()
@@ -153,8 +181,8 @@ class StateLattice:
         return True
 
     def get_neighbor_nodes(self, node):
-        end_states = np.array([x for x in itertools.product(np.linspace(-5, 5, 3),
-                                                            np.linspace(-5, 5, 3), np.linspace(0, 2*np.pi, 2))]) + node.state
+        end_states = np.array([x for x in itertools.product(np.linspace(-self.mp_length, self.mp_length, self.num_mps_per_spatial_dim),
+                                                            np.linspace(-self.mp_length, self.mp_length, self.num_mps_per_spatial_dim), np.linspace(0, 2*np.pi, 1))]) + node.state
         neighbors = []
         for end_state in end_states:
             mp = MotionPrimitive(deepcopy(node.state), end_state)
@@ -162,7 +190,7 @@ class StateLattice:
                 state = mp.end_state
                 neighbor_node = Node(mp.cost + node.g, self.heuristic(state), state, node.state, mp, graph_depth=node.graph_depth+1)
                 neighbors.append(neighbor_node)
-            samp = np.array(mp.get_sampled_position())
+            samp = np.array(mp.get_sampled_position(.1))
         #     if samp.shape[0] > 0:
         #         plt.plot(samp[:,0],samp[:,1])
         # plt.show()
@@ -181,7 +209,6 @@ class StateLattice:
         while not rospy.is_shutdown() and self.queue:
             node = heappop(self.queue)
 
-            rospy.loginfo(node)
             # If node has been closed already, skip.
             if node.is_closed:
                 continue
@@ -190,7 +217,7 @@ class StateLattice:
             self.closed_nodes.append(node)  # for animation/plotting
 
             # If node is the goal node, return path.
-            norm = np.linalg.norm((node.state - self.goal_state))
+            norm = np.linalg.norm((node.state[:2] - self.goal_state[:2]))
             if (norm <= self.goal_tolerance).all():
                 print("Path found")
                 path, sampled_path, path_cost = self.build_path(node)
@@ -207,7 +234,7 @@ class StateLattice:
                 self.neighbor_nodes.append(neighbor_node)  # for plotting
 
         if self.queue is not None:
-            print(f"Nodes expanded: {nodes_expanded}")
+            # print(f"Nodes expanded: {nodes_expanded}")
             self.neighbor_nodes = np.array(self.neighbor_nodes)
             self.closed_nodes = np.array(self.closed_nodes)
 
