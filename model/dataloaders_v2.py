@@ -225,13 +225,15 @@ class CIS700Pickled(Dataset):
     def __init__(self, pickle_dir="/home/adarsh/HDD1/cis700_final/pickled/20201124-034755/"):
         self.dir = pickle_dir
 
-        self.filenames = sorted(glob.glob(self.dir))
+        self.filenames = sorted(glob.glob(self.dir + "*"))
+        print(len(self.filenames))
 
     def __len__(self):
         return len(self.filenames)
 
     def __getitem__(self, idx):
-        return pickle.load(self.filenames[idx])
+        sample = pickle.load(open(self.filenames[idx], 'rb'))
+        return sample
 
 
 if __name__ == "__main__":
@@ -239,7 +241,6 @@ if __name__ == "__main__":
     sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201123-191213/"
     config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
     dset = CIS700Dataset(config_file, sample_fname)
-
 
     def torch_to_cv2(out):
         # print(np.min(out), np.max(out))

@@ -29,9 +29,9 @@ hyperparameter_defaults = dict(
     map_size=70,
     loaders_from_scratch=True,
     test_only=False,
-    weight_val=50,
+    weight_val=500,
     samples_per_second=30,
-    pickle_batches=True
+    pickle_batches=False
 )
 
 dt = datetime.now().strftime("%m_%d_%H_%M")
@@ -164,15 +164,15 @@ if config.loaders_from_scratch:
 else:
     if not config.test_only:
         for sdir in train_sub_dirs:
-            try:
-                train_loaders.append(DataLoader(CIS700Pickled(sdir.replace("processed", "pickled")),
-                                                batch_size=config.batch_size,
-                                                num_workers=config.num_workers, shuffle=True))
+            train_loaders.append(DataLoader(CIS700Pickled(sdir.replace("processed", "pickled")),
+                                            batch_size=1,
+                                            num_workers=config.num_workers, shuffle=True))
 
     for sdir in test_sub_dirs:
-        try:
-            test_loaders.append(DataLoader(CIS700Pickled(sdir.replace("processed", "pickled")),
-                                           batch_size=1, shuffle=True))
+        test_loaders.append(DataLoader(
+            CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
+                          map_size=config.map_size),
+            batch_size=1, shuffle=True))
 
 
 # if config.test_only:
@@ -200,17 +200,17 @@ def torch_to_cv2(out, single_channel=False):
 # train !
 for epoch in range(config.epochs):
     if not config.test_only:
-        random.shuffle(train_loaders)
+        # random.shuffle(train_loaders)
         for train_loader in train_loaders:
             for i_batch, sample_batched in enumerate(train_loader):
 
-                if config.pickle_batches:
-                    pickle_dir = train_loader.dataset.data_dir.replace("processed", "pickled")
-                    os.makedirs(pickle_dir, exist_ok=True)
-                    pickle_fname = (pickle_dir + "{:0>6d}.pkl").format(i_batch)
-                    pickle.dump(sample_batched, open(pickle_fname, 'wb'))
-                    print("dumped", pickle_fname)
-                    continue
+                # if config.pickle_batches:
+                #     pickle_dir = train_loader.dataset.data_dir.replace("processed", "pickled")
+                #     os.makedirs(pickle_dir, exist_ok=True)
+                #     pickle_fname = (pickle_dir + "{:0>6d}.pkl").format(i_batch)
+                #     pickle.dump(sample_batched, open(pickle_fname, 'wb'))
+                #     print("dumped", pickle_fname)
+                #     continue
 
                 t1 = time.time()
                 annotated, rgb, semantic, out = sample_batched
