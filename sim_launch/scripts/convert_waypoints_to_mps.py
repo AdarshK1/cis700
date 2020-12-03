@@ -3,16 +3,16 @@
 import rospy
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path, OccupancyGrid
-import reeds_shepp as rs
+from std_msgs.msg import Int16MultiArray
 import dubins
 import numpy as np
 import matplotlib.pyplot as plt
 from heapq import heappush, heappop, heapify
 from copy import deepcopy
 import itertools
+from tf.transformations import euler_from_quaternion, quaternion_from_euler
 # import fileinput
 # import cProfile
-from tf.transformations import euler_from_quaternion, quaternion_from_euler
 
 
 class Node:
@@ -45,7 +45,7 @@ class MotionPrimitive():
         self.end_state = end_state
         self.turning_radius = .3
         self.path = dubins.shortest_path(self.start_state, self.end_state, self.turning_radius)
-        self.cost = self.path.path_length() + .1*abs((self.end_state[2] -self.start_state[2])%(np.pi))
+        self.cost = self.path.path_length()  # + .1*abs((self.end_state[2] - self.start_state[2]) % (np.pi))
         # self.cost = rs.path_length(self.start_state, self.end_state, self.turning_radius)
 
     def get_sampled_position(self, step_size=1):
@@ -65,7 +65,8 @@ class StateLattice:
         self.num_mps_per_spatial_dim = 5
         self.path_sub = rospy.Subscriber("ground_truth_planning/move_base/GlobalPlanner/plan", Path, self.path_callback)
         self.map_sub = rospy.Subscriber("ground_truth_planning/map", OccupancyGrid, self.occ_grid_callback)
-        self.path_pub = rospy.Publisher("ground_truth_planning/mp_sampled_path", Path, queue_size=100)
+        self.path_pub = rospy.Publisher("ground_truth_planning/mp_sampled_path", Path, queue_size=10)
+        self.indices_pub = rospy.Publisher("ground_truth_planning/mp_indices_list", Int16MultiArray, queue_size=10)
 
     def occ_grid_callback(self, msg):
         self.gt_occ_grid = msg
@@ -94,7 +95,7 @@ class StateLattice:
             ps.header = nav_path.header
             ps.pose.position.x = sample[0]
             ps.pose.position.y = sample[1]
-            q = quaternion_from_euler(0,0,sample[2])
+            q = quaternion_from_euler(0, 0, sample[2])
             ps.pose.orientation.x = q[0]
             ps.pose.orientation.y = q[1]
             ps.pose.orientation.z = q[2]
@@ -103,16 +104,18 @@ class StateLattice:
         return nav_path
 
     def path_callback(self, msg):
-        waypoints = np.array([[pose.pose.position.x, pose.pose.position.y, euler_from_quaternion([pose.pose.orientation.x,pose.pose.orientation.y,pose.pose.orientation.z,pose.pose.orientation.w])[2]] for pose in msg.poses])
+        waypoints = np.array([[pose.pose.position.x, pose.pose.position.y, euler_from_quaternion(
+            [pose.pose.orientation.x, pose.pose.orientation.y, pose.pose.orientation.z, pose.pose.orientation.w])[2]] for pose in msg.poses])
         if waypoints.shape[0] > 0:
-            # self.path_sub.unregister()
             self.start_state = waypoints[0, :]
             self.goal_state = waypoints[-1, :]
-            print(self.start_state, self.goal_state)
-            path, sampled_path, path_cost, nodes_expanded = self.graph_search()
+            path, sampled_path, path_cost, nodes_expanded, indices_list = self.graph_search()
 
             nav_path = self.create_nav_path(sampled_path)
             self.path_pub.publish(nav_path)
+            ind_msg = Int16MultiArray()
+            ind_msg.data = indices_list
+            self.indices_pub.publish(ind_msg)
             # self.plot_path(path, sampled_path, path_cost)
             # plt.show()
             # rospy.signal_shutdown("ran graph search once")
@@ -136,15 +139,17 @@ class StateLattice:
         path = [node.state]
         sampled_path = []
         path_cost = 0
+        indices_list = []
         while node.parent is not None:
             path.append(node.parent)
             mp = node.mp
             sampled_path.append(np.array(mp.get_sampled_position(step_size=.1)))
             path_cost += mp.cost
+            indices_list.append(node.index)
             node = self.node_dict[node.parent.tobytes()]
         path.reverse()
         sampled_path.reverse()
-        return np.vstack(path).transpose(), np.vstack(sampled_path), path_cost
+        return np.vstack(path).transpose(), np.vstack(sampled_path), path_cost, indices_list
 
     def plot_path(self, path, sampled_path, path_cost, ax=None):
 
@@ -184,13 +189,14 @@ class StateLattice:
         end_states = np.array([x for x in itertools.product(np.linspace(-self.mp_length, self.mp_length, self.num_mps_per_spatial_dim),
                                                             np.linspace(-self.mp_length, self.mp_length, self.num_mps_per_spatial_dim), np.linspace(0, 2*np.pi, 1))]) + node.state
         neighbors = []
-        for end_state in end_states:
+        for i, end_state in enumerate(end_states):
             mp = MotionPrimitive(deepcopy(node.state), end_state)
             if self.is_mp_collision_free(mp):
                 state = mp.end_state
-                neighbor_node = Node(mp.cost + node.g, self.heuristic(state), state, node.state, mp, graph_depth=node.graph_depth+1)
+                neighbor_node = Node(mp.cost + node.g, self.heuristic(state), state,
+                                     node.state, mp, graph_depth=node.graph_depth+1, index=i)
                 neighbors.append(neighbor_node)
-            samp = np.array(mp.get_sampled_position(.1))
+        #     samp = np.array(mp.get_sampled_position(.1))
         #     if samp.shape[0] > 0:
         #         plt.plot(samp[:,0],samp[:,1])
         # plt.show()
@@ -220,7 +226,7 @@ class StateLattice:
             norm = np.linalg.norm((node.state[:2] - self.goal_state[:2]))
             if (norm <= self.goal_tolerance).all():
                 print("Path found")
-                path, sampled_path, path_cost = self.build_path(node)
+                path, sampled_path, path_cost, indices_list = self.build_path(node)
                 break
 
             neighbors = self.get_neighbor_nodes(node)
@@ -240,7 +246,7 @@ class StateLattice:
 
         if path is None:
             print("No path found")
-        return path, sampled_path, path_cost, nodes_expanded
+        return path, sampled_path, path_cost, nodes_expanded, indices_list
 
 
 if __name__ == "__main__":
