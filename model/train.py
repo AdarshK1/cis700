@@ -18,24 +18,23 @@ import os
 
 # eventually we can do sweeps with this setup
 hyperparameter_defaults = dict(
-    batch_size=64,
-    # batch_size=16,
-    learning_rate=0.001,
+    batch_size=1,
+    learning_rate=0.0005,
     weight_decay=0.0005,
     epochs=10,
     test_iters=50,
-    num_workers=32,
+    num_workers=16,
     # num_workers=16,
     map_size=70,
     loaders_from_scratch=True,
     test_only=False,
     weight_val=500,
-    samples_per_second=30,
+    samples_per_second=1,
     pickle_batches=False
 )
 
 dt = datetime.now().strftime("%m_%d_%H_%M")
-name_str = "_less_weighted_bce_v2"
+name_str = "_best_of_many_with_linear"
 wandb.init(project="cis700", config=hyperparameter_defaults, name=dt + name_str)
 config = wandb.config
 
@@ -78,9 +77,9 @@ def weighted_bce(output, target, weight_val=config.weight_val):
     eps = 0.0001
     # print(torch.log(output + eps))
     # print(torch.log(1 - output + eps))
-    # print(target.shape)
+    #print(target.shape)
     # print(torch.max(target), torch.min(target))
-    # print(output.shape)
+    #print(output.shape)
     bce = -(target * weight * torch.log(output + eps) + (1 - target) * torch.log(1 - output + eps))
 
     return torch.sum(bce)
@@ -89,9 +88,24 @@ def weighted_bce(output, target, weight_val=config.weight_val):
 def weighted_combo(output, target, weight_val=config.weight_val):
     return weighted_bce(output, target, weight_val) + weighted_l1(output, target, weight_val)
 
+def best_of_many_weighted_bce(output, target, weight_val=config.weight_val):
+    target = target[:,None,:]
+    weight = np.ones(target.shape)
+    weight[target != 0] = weight_val
+    weight = torch.from_numpy(weight)
+    eps = 0.0001
+    # print(torch.log(output + eps))
+    # print(torch.log(1 - output + eps))
+    # print(torch.max(target), torch.min(target))
+    bce = -(target * weight * torch.log(output + eps) + (1 - target) * torch.log(1 - output + eps))
+    sums = torch.sum(bce, [0, 2, 3])
+
+    return torch.min(sums)
+
 
 # criterion = weighted_l1
-criterion = weighted_bce
+#criterion = weighted_bce
+criterion = best_of_many_weighted_bce
 # criterion = weighted_combo
 
 test_filename_stub = "imgs/epoch_{}_{}.png"
@@ -100,36 +114,35 @@ train_filename_stub = "imgs/epoch_{}_{}_{}.png"
 train_loaders = []
 test_loaders = []
 
-# instantiate the datasets
-train_sub_dirs = [
-    "/home/adarsh/HDD1/cis700_final/processed/20201123-191213/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-203837/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-194327/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-191455/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-195338/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201124-034641/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-191855/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-203414/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201124-034755/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201124-034541/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-194129/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-193111/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-190511/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-190958/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-190928/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-184629/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-195448/",
-    # "/home/adarsh/HDD1/cis700_final/processed/20201123-194224/",
-]
-
-test_sub_dirs = [
-    "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
-]
-
-config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
-
 if config.loaders_from_scratch:
+    # instantiate the datasets
+    train_sub_dirs = [
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201123-191213/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-203837/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-194327/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-191455/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-195338/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034641/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-191855/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-203414/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034755/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201124-034541/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-194129/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-193111/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-190511/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-190958/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-190928/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-184629/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-195448/",
+        # "/home/adarsh/HDD1/cis700_final/processed/20201123-194224/",
+    ]
+
+    test_sub_dirs = [
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201124-034255/",
+    ]
+
+    config_file = "/home/ian/catkin/cis700_ws/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
     if not config.test_only:
         for sdir in train_sub_dirs:
             # no idea why it fails sometimes, here's a cheap hack
@@ -180,10 +193,10 @@ else:
 #         torch.load(
 #             "/home/adarsh/ros-workspaces/cis700_workspace/src/cis700/model/models/model_0.ckpt"))
 
-
 # let's do and save some viz stuff
 def torch_to_cv2(out, single_channel=False):
-    # print(np.min(out), np.max(out))
+    #print(out.shape)
+    #print(torch.min(out), torch.max(out))
     rand_batch_idx = int(np.random.random() * out.shape[0])
     out = out.numpy()[rand_batch_idx, :, :, :]
     out -= np.min(out)
@@ -193,7 +206,8 @@ def torch_to_cv2(out, single_channel=False):
     if single_channel:
         return out[:, :, 1]
 
-    out = np.append(out, np.zeros((out.shape[0], out.shape[1], 1)), axis=2)
+    if out.shape[2] < 3:
+        out = np.append(out, np.zeros((out.shape[0], out.shape[1], 1)), axis=2)
     return out
 
 
@@ -218,15 +232,23 @@ for epoch in range(config.epochs):
                 optimizer.zero_grad()  # zero the gradient buffers
 
                 # numpy to float tensor and all that junk
-                annotated_tensor = annotated.float()
-                rgb_tensor = rgb.float()
+                annotated_tensor = annotated.float()+1
+                rgb_tensor = rgb.float()+1
                 semantic_tensor = semantic.float()
                 out_tensor = out.float()
 
                 # forward! doesn't use semantic rn but we have it i guess
                 output = net(rgb_tensor.cuda(), annotated_tensor.cuda())
+                #print(output.shape)
 
-                loss = criterion(output.cpu().float()[:, 1, :, :], out_tensor[:, 1, :, :])
+                #print(torch.min(out[:,1,:,:]))
+                #print(torch.max(out[:,1,:,:]))
+                #print('================')
+                #print(torch.min(annotated[:,1,:,:]))
+                #print(torch.max(annotated[:,1,:,:]))
+
+                loss = criterion(output.cpu().float()[:, :, 1, :, :], out_tensor[:, 1, :, :])
+                #loss = criterion(output.cpu().float()[:, 1, :, :], annotated_tensor[:, 1, :, :])
 
                 wandb.log({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(),
                            'loader': train_loader.dataset.data_dir})
@@ -243,22 +265,29 @@ for epoch in range(config.epochs):
                 t2 = time.time()
 
                 if i_batch % 10 == 0:
+                    rgb_gt = torch_to_cv2(rgb)
+                    cv2.imwrite(train_filename_stub.format(epoch, 0, "train_rgb"), rgb_gt)
+                    wandb.log({"train_rgb": [wandb.Image(rgb_gt, caption=str(epoch))]})
+
                     out_gt = torch_to_cv2(out)
-                    cv2.imwrite(train_filename_stub.format(epoch, i_batch, "train_out_gt"), out_gt)
+                    cv2.imwrite(train_filename_stub.format(epoch, 0, "train_out_gt"), out_gt)
                     wandb.log({"train_out_gt": [wandb.Image(out_gt, caption=str(epoch))]})
 
                     annotated_disp = torch_to_cv2(annotated)
-                    cv2.imwrite(train_filename_stub.format(epoch, i_batch, "train_annotated"), annotated_disp)
+                    cv2.imwrite(train_filename_stub.format(epoch, 0, "train_annotated"), annotated_disp)
                     wandb.log({"train_annotated": [wandb.Image(annotated, caption=str(epoch))]})
 
-                    out_pred = torch_to_cv2(output.cpu().detach().float(), single_channel=True)
-                    cv2.imwrite(train_filename_stub.format(epoch, i_batch, "train_out_pred"), out_pred)
-                    wandb.log({"train_out_pred": [wandb.Image(out_pred, caption=str(epoch))]})
+                    for i in range(output.shape[1]):
+                        name = "train_out_pred"+str(i)
+                        out_pred = torch_to_cv2(output[:,i,:].cpu().detach().float(), single_channel=True)
+                        cv2.imwrite(train_filename_stub.format(epoch, 0, name), out_pred)
+                        wandb.log({name: [wandb.Image(out_pred, caption=str(epoch))]})
 
-                    # cv2.imshow("out_gt", out_gt)
-                    # cv2.imshow("annotated", annotated_disp)
-                    # cv2.imshow("out_pred", out_pred)
-                    # cv2.waitKey(1000)
+                    #cv2.imshow("train_rgb", rgb_gt)
+                    #cv2.imshow("out_gt", out_gt)
+                    #cv2.imshow("annotated", annotated_disp)
+                    #cv2.imshow("out_pred", out_pred)
+                    #cv2.waitKey(1000)
 
     random.shuffle(test_loaders)
     for test_loader in test_loaders:
@@ -282,6 +311,10 @@ for epoch in range(config.epochs):
             loss = criterion(output.cpu().float(), out_tensor)
             losses += loss.item()
 
+            rgb_gt = torch_to_cv2(rgb)
+            cv2.imwrite(test_filename_stub.format(epoch, "test_rgb"), rgb_gt)
+            wandb.log({"test_rgb": [wandb.Image(rgb_gt, caption=str(epoch))]})
+
             out_gt = torch_to_cv2(out)
             cv2.imwrite(test_filename_stub.format(epoch, "test_out_gt"), out_gt)
             wandb.log({"test_out_gt": [wandb.Image(out_gt, caption=str(epoch))]})
@@ -290,9 +323,11 @@ for epoch in range(config.epochs):
             cv2.imwrite(test_filename_stub.format(epoch, "test_annotated"), annotated_disp)
             wandb.log({"test_annotated": [wandb.Image(annotated, caption=str(epoch))]})
 
-            out_pred = torch_to_cv2(output.cpu().detach().float())
-            cv2.imwrite(test_filename_stub.format(epoch, "test_out_pred"), out_pred)
-            wandb.log({"test_out_pred": [wandb.Image(out_pred, caption=str(epoch))]})
+            for i in range(output.shape[1]):
+                name = "test_out_pred"+str(i)
+                out_pred = torch_to_cv2(output[:,i,:].cpu().detach().float(), single_channel=True)
+                cv2.imwrite(train_filename_stub.format(epoch, 0, name), out_pred)
+                wandb.log({name: [wandb.Image(out_pred, caption=str(epoch))]})
 
             wandb.log({'test_loss': losses / config.test_iters})
             print({'test_loss': loss})

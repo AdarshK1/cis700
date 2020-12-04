@@ -48,11 +48,22 @@ class Net(nn.Module):
             self.conv3_occ_branch = nn.Conv2d(20, 40, kernel_size=3)
             self.conv4_occ_branch = nn.Conv2d(40, 80, kernel_size=3)
 
-        self.t_conv1 = nn.ConvTranspose2d(160, 80, 2, stride=2)
-        self.t_conv2 = nn.ConvTranspose2d(80, 40, 2, stride=2)
-        self.t_conv3 = nn.ConvTranspose2d(40, 20, 2, stride=2)
-        self.t_conv4 = nn.ConvTranspose2d(20, 10, 2, stride=2)
-        self.t_conv5 = nn.ConvTranspose2d(10, 2, 2, stride=1)
+        self.fcn_1 = nn.Linear(80*2*19*19, 100)
+        self.fcn_2 = nn.Linear(100, 80*2*19*19)
+
+        self.t_conv1 = nn.ModuleList([])
+        self.t_conv2 = nn.ModuleList([])
+        self.t_conv3 = nn.ModuleList([])
+        self.t_conv4 = nn.ModuleList([])
+        self.t_conv5 = nn.ModuleList([])        
+
+        self.num_preds = 10
+        for _ in range(self.num_preds):
+            self.t_conv1.append(nn.ConvTranspose2d(160, 80, 2, stride=2))
+            self.t_conv2.append(nn.ConvTranspose2d(80, 40, 2, stride=2))
+            self.t_conv3.append(nn.ConvTranspose2d(40, 20, 2, stride=2))
+            self.t_conv4.append(nn.ConvTranspose2d(20, 10, 2, stride=2))
+            self.t_conv5.append(nn.ConvTranspose2d(10, 2, 2, stride=1))
 
     '''
     rgb is just an rgb image, occ_plus is a 2 channel data structure with the occupancy grid, suggested path and 
@@ -93,26 +104,37 @@ class Net(nn.Module):
 
         # put em together!
         concatenated = torch.cat([rgb_branch, occ_branch], dim=1)
+        flattened = torch.flatten(concatenated, start_dim=1)
+        flattened = F.relu(self.fcn_1(flattened))
+        flattened = F.relu(self.fcn_2(flattened))
+        concatenated = torch.reshape(flattened, concatenated.shape)
         # print("concatenated shape:", concatenated.shape)
 
-        output = F.relu(self.t_conv1(concatenated))
-        # print(output.shape)
-        output = F.relu(self.t_conv2(output))
-        # print(output.shape)
-        output = F.relu(self.t_conv3(output))
-        # print(output.shape)
-        output = F.relu(self.t_conv4(output))
-        # print(output.shape)
+        output_total = None
+        for i in range(self.num_preds):
+            output = F.relu(self.t_conv1[i](concatenated))
+            # print(output.shape)
+            output = F.relu(self.t_conv2[i](output))
+            # print(output.shape)
+            output = F.relu(self.t_conv3[i](output))
+            # print(output.shape)
+            output = F.relu(self.t_conv4[i](output))
+            # print(output.shape)
 
-        # when doing regression
-        # output = self.t_conv5(output)
+            # when doing regression
+            # output = self.t_conv5(output)
 
-        # when categorical
-        output = F.sigmoid(self.t_conv5(output))
-        # print(output.shape)
+            # when categorical
+            output = F.sigmoid(self.t_conv5[i](output))
+            # print(output.shape)
 
-        # print("Output shape:", output.shape)
-        output = F.interpolate(output, (occ_plus.shape[2], occ_plus.shape[3]))
-        # print("Interpolated shape:", output.shape)
+            # print("Output shape:", output.shape)
+            output = F.interpolate(output, (occ_plus.shape[2], occ_plus.shape[3]))[:, None, :]
+            # print("Interpolated shape:", output.shape)
+            
+            if output_total is None:
+                output_total = output
+            else:
+                output_total = torch.cat((output_total, output), 1)
 
-        return output
+        return output_total

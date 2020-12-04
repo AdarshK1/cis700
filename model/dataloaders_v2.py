@@ -8,7 +8,7 @@ import cv2
 import sys
 import pickle
 
-sys.path.append("/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils")
+sys.path.append("/home/ian/catkin/cis700_ws/src/rosbag-dl-utils")
 
 from base_data_loader import BaseDataset
 
@@ -133,11 +133,11 @@ class CIS700Dataset(BaseDataset):
                 # mark path
         if path is not None:
             for path_pose in path:
-                path_map_coords_x = np.clip(int((path_pose[0] - pose[0] + self.map_size / 2) / meta["resolution"]),
+                path_map_coords_x = np.clip(int((path_pose[0] - path[0][0] + self.map_size / 2) / meta["resolution"]),
                                             0,
                                             annotation_channel.shape[0] - 1)
 
-                path_map_coords_y = np.clip(int((path_pose[1] - pose[1] + self.map_size / 2) / meta["resolution"]),
+                path_map_coords_y = np.clip(int((path_pose[1] - path[0][1] + self.map_size / 2) / meta["resolution"]),
                                             0,
                                             annotation_channel.shape[0] - 1)
 
@@ -206,18 +206,19 @@ class CIS700Dataset(BaseDataset):
         curr_rgb = vals["husky_camera_image_raw"][0]
         curr_semantic = vals["husky_semantic_camera_image_raw"][0]
 
-        rgb_padded = np.zeros((annotated.shape[0], annotated.shape[1], 3))
-        rgb_padded[:curr_rgb.shape[0], :curr_rgb.shape[1], :] = curr_rgb
+        #rgb_padded = np.zeros((annotated.shape[0], annotated.shape[1], 3))
+        #rgb_padded[:curr_rgb.shape[0], :curr_rgb.shape[1], :] = curr_rgb
         semantic_padded = np.zeros((annotated.shape[0], annotated.shape[1], 3))
         semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
+        rgb_scaled = cv2.resize(curr_rgb, (annotated.shape[0], annotated.shape[1]))
 
         annotated = self.norm_stuff(annotated)
         annotated_gt = self.norm_stuff(annotated_gt, zero_to_one=True)
-        rgb_padded = self.norm_stuff(rgb_padded)
+        rgb_scaled = self.norm_stuff(rgb_scaled)
         semantic_padded = self.norm_stuff(semantic_padded)
 
         # return !
-        return np.array(annotated), np.array(rgb_padded), np.array(semantic_padded), np.array(annotated_gt)
+        return np.array(annotated), np.array(rgb_scaled), np.array(semantic_padded), np.array(annotated_gt)
 
 
 class CIS700Pickled(Dataset):
