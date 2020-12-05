@@ -21,20 +21,20 @@ hyperparameter_defaults = dict(
     batch_size=16,
     learning_rate=0.0005,
     weight_decay=0.0005,
-    epochs=10,
+    epochs=1,
     test_iters=50,
     num_workers=16,
     # num_workers=16,
-    map_size=20,
+    map_size=70,
     loaders_from_scratch=True,
-    test_only=False,
+    test_only=True,
     weight_val=500,
-    samples_per_second=4,
+    samples_per_second=1,
     pickle_batches=False
 )
 
 dt = datetime.now().strftime("%m_%d_%H_%M")
-name_str = "new_dataloader_best_of_one_small"
+name_str = "new_dataloader_best_of_one"
 wandb.init(project="cis700", config=hyperparameter_defaults, name=dt + name_str)
 config = wandb.config
 
@@ -128,12 +128,7 @@ if config.loaders_from_scratch:
         #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020456/",
         #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020535/",
         #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020635/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020722/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130750/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130953/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131659/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131845/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131958/"
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201123-191213/",
 
         # "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
         # "/home/adarsh/HDD1/cis700_final/processed/20201123-203837/",
@@ -156,14 +151,17 @@ if config.loaders_from_scratch:
     ]
 
     test_sub_dirs = [
-        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020722/"
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201124-034255/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132146/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132333/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132603/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132715/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132902/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-133044/"
     ]
 
     config_file = "/home/ian/catkin/cis700_ws/src/rosbag-dl-utils/harvester_configs/cis700_prim.yaml"
     if not config.test_only:
         for sdir in train_sub_dirs:
-            print(sdir)
             # no idea why it fails sometimes, here's a cheap hack
             try:
                 train_loaders.append(DataLoader(
@@ -181,7 +179,6 @@ if config.loaders_from_scratch:
 
     for sdir in test_sub_dirs:
         # no idea why it fails sometimes, here's a cheap hack
-        print(sdir)
         try:
             test_loaders.append(DataLoader(
                 CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
@@ -230,7 +227,8 @@ def torch_to_cv2(out, single_channel=False):
         out = np.append(out, np.zeros((out.shape[0], out.shape[1], 1)), axis=2)
     return out
 
-
+PATH = "models/model_9.ckpt"
+net.load_state_dict(torch.load(PATH))
 # train !
 for epoch in range(config.epochs):
     if not config.test_only:
@@ -279,9 +277,9 @@ for epoch in range(config.epochs):
                 loss.backward()
                 optimizer.step()  # Does the update
 
-                backup_path = backup_dir + "/model.ckpt"
+                #backup_path = backup_dir + "/model.ckpt"
 
-                torch.save(net.state_dict(), backup_path)
+                #torch.save(net.state_dict(), backup_path)
                 t2 = time.time()
 
                 if i_batch % 10 == 0 and torch.any(valid):
@@ -307,7 +305,7 @@ for epoch in range(config.epochs):
                     cv2.imshow("out_gt", out_gt)
                     cv2.imshow("annotated", annotated_disp)
                     cv2.imshow("out_pred", out_pred/255)
-                    cv2.waitKey(100)
+                    cv2.waitKey(40)
 
     random.shuffle(test_loaders)
     for test_loader in test_loaders:
@@ -353,10 +351,11 @@ for epoch in range(config.epochs):
             print({'test_loss': loss})
 
             # if i_batch == 0:
-            # cv2.imshow("out_gt", out_gt)
-            # cv2.imshow("annotated", annotated_disp)
-            # cv2.imshow("out_pred", out_pred)
-            # cv2.waitKey(1000)
+            cv2.imshow("rgb", rgb_gt/255)
+            cv2.imshow("out_gt", out_gt)
+            cv2.imshow("annotated", annotated_disp)
+            cv2.imshow("out_pred", out_pred/255)
+            cv2.waitKey(1000)
 
     PATH = "models/model_{}.ckpt".format(epoch)
     torch.save(net.state_dict(), PATH)

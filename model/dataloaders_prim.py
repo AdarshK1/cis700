@@ -16,7 +16,7 @@ from base_data_loader import BaseDataset
 
 class CIS700Dataset(BaseDataset):
 
-    def __init__(self, config_file, sub_dir, map_size=70, samples_per_second=120, skip_last_n_seconds=0,
+    def __init__(self, config_file, sub_dir, map_size=30, samples_per_second=120, skip_last_n_seconds=0,
                  skip_first_n_seconds=0):
 
         super().__init__(config_file, sub_dir, samples_per_second=samples_per_second,
@@ -153,8 +153,10 @@ class CIS700Dataset(BaseDataset):
                     print("Path Point", pose[0], pose[1])
                     print("Path cvtd", path_map_coords_x, path_map_coords_y)
 
-                annotation_channel = cv2.circle(annotation_channel, (path_map_coords_x, path_map_coords_y), 2,
-                                                (0, 255, 0), -1)
+                if 0 < path_map_coords_y < annotation_channel.shape[0] and \
+                        0 < path_map_coords_x < annotation_channel.shape[0]: 
+                    annotation_channel = cv2.circle(annotation_channel, (path_map_coords_x, path_map_coords_y), 2,
+                                                    (0, 255, 0), -1)
 
         if verbose:
             cv2.imshow("test", annotation_channel)
@@ -218,23 +220,28 @@ class CIS700Dataset(BaseDataset):
 
         #rgb_padded = np.zeros((annotated.shape[0], annotated.shape[1], 3))
         #rgb_padded[:curr_rgb.shape[0], :curr_rgb.shape[1], :] = curr_rgb
-        semantic_padded = np.zeros((annotated.shape[0], annotated.shape[1], 3))
-        semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
+        #semantic_padded = np.zeros((annotated.shape[0], annotated.shape[1], 3))
+        #semantic_padded[:curr_semantic.shape[0], :curr_semantic.shape[1], :] = curr_semantic
         rgb_scaled = cv2.resize(curr_rgb, (annotated.shape[0], annotated.shape[1]))
+        semantic_scaled = cv2.resize(curr_semantic, (annotated.shape[0], annotated.shape[1]))
 
         annotated = self.norm_stuff(annotated)
         annotated_gt = self.norm_stuff(annotated_gt, zero_to_one=True)
         rgb_scaled = self.norm_stuff(rgb_scaled)
-        semantic_padded = self.norm_stuff(semantic_padded)
+        semantic_scaled = self.norm_stuff(semantic_scaled)
 
         #something weird going on, zero input
-        valid = True
-        if np.linalg.norm(vals["unity_ros_husky_TrueState_odom"][0:2] - 
-                vals["ground_truth_planning_move_base_GlobalPlanner_plan"][0][0:2]) > 10:
-            valid = False
+        valid = False
+        if len(vals["ground_truth_planning_move_base_GlobalPlanner_plan"]) > 0 and \
+           len(vals["move_base_GlobalPlanner_plan"]) > 0:
+            if np.linalg.norm(np.array(vals["unity_ros_husky_TrueState_odom"][0:2]) - 
+                    np.array(vals["ground_truth_planning_move_base_GlobalPlanner_plan"][0][0:2])) < 2 and \
+               np.linalg.norm(np.array(vals["move_base_GlobalPlanner_plan"][-1][0:2]) - 
+                    np.array(vals["ground_truth_planning_move_base_GlobalPlanner_plan"][-1][0:2])) < 2:
+                valid = True 
 
         # return !
-        return np.array(annotated), np.array(rgb_scaled), np.array(semantic_padded), np.array(annotated_gt), valid
+        return np.array(annotated), np.array(rgb_scaled), np.array(semantic_scaled), np.array(annotated_gt), valid
 
 
 class CIS700Pickled(Dataset):
@@ -255,9 +262,9 @@ class CIS700Pickled(Dataset):
 
 if __name__ == "__main__":
     N = 75
-    sample_fname = "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015728/"
+    sample_fname = "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130953/"
     config_file = "/home/ian/catkin/cis700_ws/src/rosbag-dl-utils/harvester_configs/cis700_prim.yaml"
-    dset = CIS700Dataset(config_file, sample_fname, samples_per_second=1, map_size=70)
+    dset = CIS700Dataset(config_file, sample_fname, samples_per_second=1, map_size=20)
 
     def torch_to_cv2(out):
         # print(np.min(out), np.max(out))
