@@ -6,7 +6,7 @@ import torchvision
 import numpy as np
 import wandb
 from cnn_rnn import Net
-from dataloaders_v2 import CIS700Dataset, CIS700Pickled
+from dataloaders_prim import CIS700Dataset, CIS700Pickled
 from torch.utils.data import DataLoader
 import time
 import sys
@@ -18,7 +18,7 @@ import os
 
 # eventually we can do sweeps with this setup
 hyperparameter_defaults = dict(
-    batch_size=1,
+    batch_size=16,
     learning_rate=0.0005,
     weight_decay=0.0005,
     epochs=10,
@@ -29,12 +29,12 @@ hyperparameter_defaults = dict(
     loaders_from_scratch=True,
     test_only=False,
     weight_val=500,
-    samples_per_second=1,
+    samples_per_second=4,
     pickle_batches=False
 )
 
 dt = datetime.now().strftime("%m_%d_%H_%M")
-name_str = "_best_of_many_with_linear"
+name_str = "new_dataloader_best_of_many"
 wandb.init(project="cis700", config=hyperparameter_defaults, name=dt + name_str)
 config = wandb.config
 
@@ -88,7 +88,7 @@ def weighted_bce(output, target, weight_val=config.weight_val):
 def weighted_combo(output, target, weight_val=config.weight_val):
     return weighted_bce(output, target, weight_val) + weighted_l1(output, target, weight_val)
 
-def best_of_many_weighted_bce(output, target, weight_val=config.weight_val):
+def best_of_many_weighted_bce(output, target, valid, weight_val=config.weight_val):
     target = target[:,None,:]
     weight = np.ones(target.shape)
     weight[target != 0] = weight_val
@@ -97,7 +97,8 @@ def best_of_many_weighted_bce(output, target, weight_val=config.weight_val):
     # print(torch.log(output + eps))
     # print(torch.log(1 - output + eps))
     # print(torch.max(target), torch.min(target))
-    bce = -(target * weight * torch.log(output + eps) + (1 - target) * torch.log(1 - output + eps))
+    bce = -(target * weight * torch.log(output + eps) + (1 - target) * torch.log(1 - output + eps))[valid,:]
+    print(bce.shape)
     sums = torch.sum(bce, [0, 2, 3])
 
     return torch.min(sums)
@@ -117,7 +118,18 @@ test_loaders = []
 if config.loaders_from_scratch:
     # instantiate the datasets
     train_sub_dirs = [
-        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201123-191213/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015130/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015728/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015809/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015930/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020050/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020212/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020334/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020456/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020535/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020635/",
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201123-191213/",
+
         # "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
         # "/home/adarsh/HDD1/cis700_final/processed/20201123-203837/",
         # "/home/adarsh/HDD1/cis700_final/processed/20201123-194327/",
@@ -139,10 +151,11 @@ if config.loaders_from_scratch:
     ]
 
     test_sub_dirs = [
-        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201124-034255/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020722/"
+        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201124-034255/",
     ]
 
-    config_file = "/home/ian/catkin/cis700_ws/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
+    config_file = "/home/ian/catkin/cis700_ws/src/rosbag-dl-utils/harvester_configs/cis700_prim.yaml"
     if not config.test_only:
         for sdir in train_sub_dirs:
             # no idea why it fails sometimes, here's a cheap hack
@@ -151,13 +164,13 @@ if config.loaders_from_scratch:
                     CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
                                   map_size=config.map_size),
                     batch_size=config.batch_size,
-                    num_workers=config.num_workers, shuffle=True))
+                    num_workers=config.num_workers, shuffle=False))
             except ValueError:
                 train_loaders.append(DataLoader(
                     CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
                                   map_size=config.map_size),
                     batch_size=config.batch_size,
-                    num_workers=config.num_workers, shuffle=True))
+                    num_workers=config.num_workers, shuffle=False))
             # pickle.dump(train_loaders, open("train_loaders.pkl", 'wb'))
 
     for sdir in test_sub_dirs:
@@ -166,12 +179,12 @@ if config.loaders_from_scratch:
             test_loaders.append(DataLoader(
                 CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
                               map_size=config.map_size),
-                batch_size=1, shuffle=True))
+                batch_size=1, shuffle=False))
         except ValueError:
             test_loaders.append(DataLoader(
                 CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
                               map_size=config.map_size),
-                batch_size=1, shuffle=True))
+                batch_size=1, shuffle=False))
 
         # pickle.dump(test_loaders, open("test_loaders.pkl", 'wb'))
 else:
@@ -227,7 +240,7 @@ for epoch in range(config.epochs):
                 #     continue
 
                 t1 = time.time()
-                annotated, rgb, semantic, out = sample_batched
+                annotated, rgb, semantic, out, valid = sample_batched
 
                 optimizer.zero_grad()  # zero the gradient buffers
 
@@ -247,7 +260,7 @@ for epoch in range(config.epochs):
                 #print(torch.min(annotated[:,1,:,:]))
                 #print(torch.max(annotated[:,1,:,:]))
 
-                loss = criterion(output.cpu().float()[:, :, 1, :, :], out_tensor[:, 1, :, :])
+                loss = criterion(output.cpu().float()[:, :, 1, :, :], out_tensor[:, 1, :, :], valid)
                 #loss = criterion(output.cpu().float()[:, 1, :, :], annotated_tensor[:, 1, :, :])
 
                 wandb.log({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(),
@@ -264,30 +277,30 @@ for epoch in range(config.epochs):
                 torch.save(net.state_dict(), backup_path)
                 t2 = time.time()
 
-                if i_batch % 10 == 0:
-                    rgb_gt = torch_to_cv2(rgb)
+                if i_batch % 10 == 0 and torch.any(valid):
+                    rgb_gt = torch_to_cv2(rgb[valid,:])
                     cv2.imwrite(train_filename_stub.format(epoch, 0, "train_rgb"), rgb_gt)
                     wandb.log({"train_rgb": [wandb.Image(rgb_gt, caption=str(epoch))]})
 
-                    out_gt = torch_to_cv2(out)
+                    out_gt = torch_to_cv2(out[valid,:])
                     cv2.imwrite(train_filename_stub.format(epoch, 0, "train_out_gt"), out_gt)
                     wandb.log({"train_out_gt": [wandb.Image(out_gt, caption=str(epoch))]})
 
-                    annotated_disp = torch_to_cv2(annotated)
+                    annotated_disp = torch_to_cv2(annotated[valid,:])
                     cv2.imwrite(train_filename_stub.format(epoch, 0, "train_annotated"), annotated_disp)
-                    wandb.log({"train_annotated": [wandb.Image(annotated, caption=str(epoch))]})
+                    wandb.log({"train_annotated": [wandb.Image(annotated_disp, caption=str(epoch))]})
 
                     for i in range(output.shape[1]):
                         name = "train_out_pred"+str(i)
-                        out_pred = torch_to_cv2(output[:,i,:].cpu().detach().float(), single_channel=True)
+                        out_pred = torch_to_cv2(output[valid,i,:].cpu().detach().float(), single_channel=True)
                         cv2.imwrite(train_filename_stub.format(epoch, 0, name), out_pred)
                         wandb.log({name: [wandb.Image(out_pred, caption=str(epoch))]})
 
-                    #cv2.imshow("train_rgb", rgb_gt)
-                    #cv2.imshow("out_gt", out_gt)
-                    #cv2.imshow("annotated", annotated_disp)
-                    #cv2.imshow("out_pred", out_pred)
-                    #cv2.waitKey(1000)
+                    cv2.imshow("train_rgb", rgb_gt/255)
+                    cv2.imshow("out_gt", out_gt)
+                    cv2.imshow("annotated", annotated_disp)
+                    cv2.imshow("out_pred", out_pred/255)
+                    cv2.waitKey(100)
 
     random.shuffle(test_loaders)
     for test_loader in test_loaders:
@@ -296,11 +309,11 @@ for epoch in range(config.epochs):
             if i_batch > config.test_iters:
                 break
 
-            annotated, rgb, semantic, out = sample_batched
+            annotated, rgb, semantic, out, valid = sample_batched
 
             # numpy to float tensor and all that junk
-            annotated_tensor = annotated.float()
-            rgb_tensor = rgb.float()
+            annotated_tensor = annotated.float()+1
+            rgb_tensor = rgb.float()+1
             semantic_tensor = semantic.float()
             out_tensor = out.float()
 
@@ -308,7 +321,7 @@ for epoch in range(config.epochs):
             output = net(rgb_tensor.cuda(), annotated_tensor.cuda())
 
             # hack because i like big numbers
-            loss = criterion(output.cpu().float(), out_tensor)
+            loss = criterion(output.cpu().float()[:,:,1,:,:], out_tensor[:,1,:,:], valid)
             losses += loss.item()
 
             rgb_gt = torch_to_cv2(rgb)

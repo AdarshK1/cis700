@@ -48,8 +48,8 @@ class Net(nn.Module):
             self.conv3_occ_branch = nn.Conv2d(20, 40, kernel_size=3)
             self.conv4_occ_branch = nn.Conv2d(40, 80, kernel_size=3)
 
-        self.fcn_1 = nn.Linear(80*2*19*19, 100)
-        self.fcn_2 = nn.Linear(100, 80*2*19*19)
+        self.fcn_1 = nn.Linear(80*2*19*19, 500)
+        self.fcn_2 = nn.Linear(500, 80*2*19*19)
 
         self.t_conv1 = nn.ModuleList([])
         self.t_conv2 = nn.ModuleList([])
