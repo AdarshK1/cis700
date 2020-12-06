@@ -49,6 +49,8 @@ class Net(nn.Module):
             self.conv4_occ_branch = nn.Conv2d(40, 80, kernel_size=3)
 
         self.fcn_1 = nn.Linear(80*2*4*4, 500)
+        self.fcn_mid_1 = nn.Linear(500,500)
+        self.fcn_mid_2 = nn.Linear(500,500)
         self.fcn_2 = nn.Linear(500, 80*2*4*4)
 
         self.t_conv1 = nn.ModuleList([])
@@ -62,7 +64,7 @@ class Net(nn.Module):
             self.t_conv1.append(nn.ConvTranspose2d(160, 80, 2, stride=2))
             self.t_conv2.append(nn.ConvTranspose2d(80, 40, 2, stride=2))
             self.t_conv3.append(nn.ConvTranspose2d(40, 20, 2, stride=2))
-            self.t_conv4.append(nn.ConvTranspose2d(20, 10, 2, stride=2))
+            self.t_conv4.append(nn.ConvTranspose2d(20*2, 10, 2, stride=2))
             self.t_conv5.append(nn.ConvTranspose2d(10, 2, 2, stride=1))
 
     '''
@@ -86,18 +88,18 @@ class Net(nn.Module):
             rgb_branch = self.rgb_resnet(rgb)
 
         # occ encoder
-        if self.occ_model_type == "other":
-            # print(occ_plus.shape)
-            occ_branch = F.relu(F.max_pool2d(self.conv1_occ_branch(occ_plus), 2))
-            # print(occ_branch.shape)
-            occ_branch = F.relu(F.max_pool2d(self.conv2_occ_branch(occ_branch), 2))
-            # print(occ_branch.shape)
-            occ_branch = F.relu(F.max_pool2d(self.conv3_occ_branch(occ_branch), 2))
-            # print(occ_branch.shape)
-            occ_branch = F.relu(F.max_pool2d(self.conv4_occ_branch(occ_branch), 2))
-            # print(occ_branch.shape)
-        else:
-            occ_branch = self.occ_resnet(occ_plus)
+        #if self.occ_model_type == "other":
+        # print(occ_plus.shape)
+        occ_branch = F.relu(F.max_pool2d(self.conv1_occ_branch(occ_plus), 2))
+        # print(occ_branch.shape)
+        occ_branch_mid = F.relu(F.max_pool2d(self.conv2_occ_branch(occ_branch), 2))
+        # print(occ_branch.shape)
+        occ_branch = F.relu(F.max_pool2d(self.conv3_occ_branch(occ_branch_mid), 2))
+        # print(occ_branch.shape)
+        occ_branch = F.relu(F.max_pool2d(self.conv4_occ_branch(occ_branch), 2))
+        # print(occ_branch.shape)
+        #else:
+        #    occ_branch = self.occ_resnet(occ_plus)
 
         # print("occ_branch shape:", occ_branch.shape)
         # print("rgb_branch shape:", rgb_branch.shape)
@@ -106,6 +108,8 @@ class Net(nn.Module):
         concatenated = torch.cat([rgb_branch, occ_branch], dim=1)
         flattened = torch.flatten(concatenated, start_dim=1)
         flattened = F.relu(self.fcn_1(flattened))
+        flattened = F.relu(self.fcn_mid_1(flattened))
+        flattened = F.relu(self.fcn_mid_2(flattened))
         flattened = F.relu(self.fcn_2(flattened))
         concatenated = torch.reshape(flattened, concatenated.shape)
         # print("concatenated shape:", concatenated.shape)
@@ -117,8 +121,14 @@ class Net(nn.Module):
             output = F.relu(self.t_conv2[i](output))
             # print(output.shape)
             output = F.relu(self.t_conv3[i](output))
+
+            occ_branch_mid_reshaped = F.interpolate(occ_branch_mid, (output.shape[2], output.shape[3]))
+            print(output.shape)
+            print(occ_branch_mid_reshaped.shape)
+            output = torch.cat([output, occ_branch_mid_reshaped], dim=1)
             # print(output.shape)
             output = F.relu(self.t_conv4[i](output))
+
             # print(output.shape)
 
             # when doing regression

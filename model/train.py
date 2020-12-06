@@ -21,20 +21,20 @@ hyperparameter_defaults = dict(
     batch_size=16,
     learning_rate=0.0005,
     weight_decay=0.0005,
-    epochs=10,
+    epochs=20,
     test_iters=50,
     num_workers=16,
     # num_workers=16,
     map_size=20,
     loaders_from_scratch=True,
     test_only=False,
-    weight_val=500,
+    weight_val=10,
     samples_per_second=4,
     pickle_batches=False
 )
 
 dt = datetime.now().strftime("%m_%d_%H_%M")
-name_str = "new_dataloader_best_of_one_small"
+name_str = "skip_conn_best_of_1"
 wandb.init(project="cis700", config=hyperparameter_defaults, name=dt + name_str)
 config = wandb.config
 
@@ -119,21 +119,21 @@ if config.loaders_from_scratch:
     # instantiate the datasets
     train_sub_dirs = [
         "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015130/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015728/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015809/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015930/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020050/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020212/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020334/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020456/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020535/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020635/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020722/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130750/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130953/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131659/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131845/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131958/"
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015728/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015809/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-015930/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020050/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020212/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020334/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020456/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020535/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020635/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201204-020722/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130750/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130953/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131659/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131845/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-131958/"
 
         # "/home/adarsh/HDD1/cis700_final/processed/20201124-034255/",
         # "/home/adarsh/HDD1/cis700_final/processed/20201123-203837/",
@@ -268,7 +268,7 @@ for epoch in range(config.epochs):
                 #print(torch.max(annotated[:,1,:,:]))
 
                 loss = criterion(output.cpu().float()[:, :, 1, :, :], out_tensor[:, 1, :, :], valid)
-                #loss = criterion(output.cpu().float()[:, 1, :, :], annotated_tensor[:, 1, :, :])
+                #loss = criterion(output.cpu().float()[:, :, 1, :, :], annotated_tensor[:, 1, :, :], valid)
 
                 wandb.log({'epoch': epoch, 'iteration': i_batch, 'loss': loss.item(),
                            'loader': train_loader.dataset.data_dir})

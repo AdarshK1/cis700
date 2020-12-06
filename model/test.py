@@ -25,7 +25,7 @@ hyperparameter_defaults = dict(
     test_iters=50,
     num_workers=16,
     # num_workers=16,
-    map_size=70,
+    map_size=20,
     loaders_from_scratch=True,
     test_only=True,
     weight_val=500,
@@ -153,10 +153,10 @@ if config.loaders_from_scratch:
     test_sub_dirs = [
         "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132146/",
         "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132333/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132603/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132715/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132902/",
-        #"/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-133044/"
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132603/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132715/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-132902/",
+        "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-133044/"
     ]
 
     config_file = "/home/ian/catkin/cis700_ws/src/rosbag-dl-utils/harvester_configs/cis700_prim.yaml"
@@ -346,6 +346,7 @@ for epoch in range(config.epochs):
                 out_pred = torch_to_cv2(output[:,i,:].cpu().detach().float(), single_channel=True)
                 cv2.imwrite(train_filename_stub.format(epoch, 0, name), out_pred)
                 wandb.log({name: [wandb.Image(out_pred, caption=str(epoch))]})
+                cv2.imshow("out_pred"+str(i), out_pred/255)
 
             wandb.log({'test_loss': losses / config.test_iters})
             print({'test_loss': loss})
@@ -354,7 +355,6 @@ for epoch in range(config.epochs):
             cv2.imshow("rgb", rgb_gt/255)
             cv2.imshow("out_gt", out_gt)
             cv2.imshow("annotated", annotated_disp)
-            cv2.imshow("out_pred", out_pred/255)
             cv2.waitKey(1000)
 
     PATH = "models/model_{}.ckpt".format(epoch)
