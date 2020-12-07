@@ -10,6 +10,7 @@ import sys
 import pickle
 
 sys.path.append("/home/ian/catkin/cis700_ws/src/rosbag-dl-utils")
+sys.path.append("/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils")
 
 from base_data_loader import BaseDataset
 
@@ -186,19 +187,28 @@ class CIS700Dataset(BaseDataset):
     def __getitem__(self, idx):
         vals = super().__getitem__(idx)
 
-        #print("keys", vals.keys())
-        
+        # print("keys", vals.keys())
 
         map_img, map_meta = self.process_map(vals["map"])
         gt_map_img, gt_map_meta = self.process_map(vals["ground_truth_planning_map"])
         # print("gt_map_meta", gt_map_meta)
         # print("map_meta", map_meta)
 
+        # grab and pad indices
+        mps = np.array(vals["ground_truth_planning_mp_indices_list"])
+        if len(mps) > 5:
+            mps = mps[:5]
+        elif len(mps) < 5:
+            mps = np.pad(mps, (0, 5-mps.shape[0], ))
+
+        # print(mps)
+
+
         # this one is centered on the robot and of fixed size
         annotated = self.annotate_map_centered(map_img,
                                                map_meta,
                                                vals["move_base_GlobalPlanner_plan"],
-                                               None,
+                                               vals["move_base_current_goal"],
                                                # TODO (akulkarni) we didn't bag the goal so need to grab it from gt path
                                                vals["unity_ros_husky_TrueState_odom"], verbose=False)
 
@@ -241,7 +251,7 @@ class CIS700Dataset(BaseDataset):
                 valid = True 
 
         # return !
-        return np.array(annotated), np.array(rgb_scaled), np.array(semantic_scaled), np.array(annotated_gt), valid
+        return np.array(annotated), np.array(rgb_scaled), np.array(semantic_scaled), np.array(annotated_gt), mps, valid
 
 
 class CIS700Pickled(Dataset):
@@ -261,9 +271,20 @@ class CIS700Pickled(Dataset):
 
 
 if __name__ == "__main__":
-    N = 75
-    sample_fname = "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130953/"
-    config_file = "/home/ian/catkin/cis700_ws/src/rosbag-dl-utils/harvester_configs/cis700_prim.yaml"
+    N = 100
+    # sample_fname = "/media/ian/SSD1/tmp_datasets/UnityLearnedPlanning/20201205-130953/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-015130/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-015728/"
+    sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-015809/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-015930/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-020050/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-020212/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-020334/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-020456/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-020535/"
+    # sample_fname = "/home/adarsh/HDD1/cis700_final/processed/20201204-020635/"
+    # config_file = "/home/ian/catkin/cis700_ws/src/rosbag-dl-utils/harvester_configs/cis700_prim.yaml"
+    config_file = "/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils/harvester_configs/cis700.yaml"
     dset = CIS700Dataset(config_file, sample_fname, samples_per_second=1, map_size=20)
 
     def torch_to_cv2(out):

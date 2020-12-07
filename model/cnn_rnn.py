@@ -7,6 +7,7 @@ import torchvision
 import numpy as np
 import wandb
 
+
 # wandb.init(project="cis700")
 
 
@@ -48,29 +49,30 @@ class Net(nn.Module):
             self.conv3_occ_branch = nn.Conv2d(20, 40, kernel_size=3)
             self.conv4_occ_branch = nn.Conv2d(40, 80, kernel_size=3)
 
-        self.fcn_1 = nn.Linear(80*2*4*4, 500)
-        self.fcn_mid_1 = nn.Linear(500,500)
-        self.fcn_mid_2 = nn.Linear(500,500)
-        self.fcn_2 = nn.Linear(500, 80*2*4*4)
+        self.fcn_1 = nn.Linear(80 * 2 * 4 * 4, 500)
+        self.fcn_mid_1 = nn.Linear(500, 500)
+        self.fcn_mid_2 = nn.Linear(500, 500)
+        self.fcn_2 = nn.Linear(500, 80 * 2 * 4 * 4)
 
         self.t_conv1 = nn.ModuleList([])
         self.t_conv2 = nn.ModuleList([])
         self.t_conv3 = nn.ModuleList([])
         self.t_conv4 = nn.ModuleList([])
-        self.t_conv5 = nn.ModuleList([])        
+        self.t_conv5 = nn.ModuleList([])
 
         self.num_preds = 1
         for _ in range(self.num_preds):
             self.t_conv1.append(nn.ConvTranspose2d(160, 80, 2, stride=2))
             self.t_conv2.append(nn.ConvTranspose2d(80, 40, 2, stride=2))
             self.t_conv3.append(nn.ConvTranspose2d(40, 20, 2, stride=2))
-            self.t_conv4.append(nn.ConvTranspose2d(20*2, 10, 2, stride=2))
+            self.t_conv4.append(nn.ConvTranspose2d(20 * 2, 10, 2, stride=2))
             self.t_conv5.append(nn.ConvTranspose2d(10, 2, 2, stride=1))
 
     '''
     rgb is just an rgb image, occ_plus is a 2 channel data structure with the occupancy grid, suggested path and 
     goal all encoded in the different channels
     '''
+
     def forward(self, rgb, occ_plus):
 
         if self.rgb_model_type == "other":
@@ -88,7 +90,7 @@ class Net(nn.Module):
             rgb_branch = self.rgb_resnet(rgb)
 
         # occ encoder
-        #if self.occ_model_type == "other":
+        # if self.occ_model_type == "other":
         # print(occ_plus.shape)
         occ_branch = F.relu(F.max_pool2d(self.conv1_occ_branch(occ_plus), 2))
         # print(occ_branch.shape)
@@ -98,7 +100,7 @@ class Net(nn.Module):
         # print(occ_branch.shape)
         occ_branch = F.relu(F.max_pool2d(self.conv4_occ_branch(occ_branch), 2))
         # print(occ_branch.shape)
-        #else:
+        # else:
         #    occ_branch = self.occ_resnet(occ_plus)
 
         # print("occ_branch shape:", occ_branch.shape)
@@ -141,10 +143,59 @@ class Net(nn.Module):
             # print("Output shape:", output.shape)
             output = F.interpolate(output, (occ_plus.shape[2], occ_plus.shape[3]))[:, None, :]
             # print("Interpolated shape:", output.shape)
-            
+
             if output_total is None:
                 output_total = output
             else:
                 output_total = torch.cat((output_total, output), 1)
 
         return output_total
+
+
+class PrimNet(nn.Module):
+    def __init__(self, n_prims=25, rollout=5, rgb_net="other", occ_net="other"):
+        super(PrimNet, self).__init__()
+        self.rgb_model_type = rgb_net
+        self.occ_model_type = occ_net
+
+        self.n_prims = n_prims
+        self.rollout = rollout
+
+        self.conv1_rgb_branch = nn.Conv2d(3, 10, kernel_size=3)
+        self.conv2_rgb_branch = nn.Conv2d(10, 20, kernel_size=3)
+        self.conv3_rgb_branch = nn.Conv2d(20, 40, kernel_size=3)
+        self.conv4_rgb_branch = nn.Conv2d(40, 80, kernel_size=3)
+
+        self.conv1_occ_branch = nn.Conv2d(2, 10, kernel_size=3)
+        self.conv2_occ_branch = nn.Conv2d(10, 20, kernel_size=3)
+        self.conv3_occ_branch = nn.Conv2d(20, 40, kernel_size=3)
+        self.conv4_occ_branch = nn.Conv2d(40, 80, kernel_size=3)
+
+        self.fcn_1 = nn.Linear(80 * 2 * 4 * 4, 1250)
+        self.fcn_2 = nn.Linear(1250, 600)
+        self.fcn_3 = nn.Linear(600, 300)
+        self.fcn_4 = nn.Linear(300, n_prims * rollout)
+
+    def forward(self, rgb, occ_plus):
+        # rgb encoder
+        rgb_branch = F.relu(F.max_pool2d(self.conv1_rgb_branch(rgb), 2))
+        rgb_branch = F.relu(F.max_pool2d(self.conv2_rgb_branch(rgb_branch), 2))
+        rgb_branch = F.relu(F.max_pool2d(self.conv3_rgb_branch(rgb_branch), 2))
+        rgb_branch = F.relu(F.max_pool2d(self.conv4_rgb_branch(rgb_branch), 2))
+
+        occ_branch = F.relu(F.max_pool2d(self.conv1_occ_branch(occ_plus), 2))
+        occ_branch_mid = F.relu(F.max_pool2d(self.conv2_occ_branch(occ_branch), 2))
+        occ_branch = F.relu(F.max_pool2d(self.conv3_occ_branch(occ_branch_mid), 2))
+        occ_branch = F.relu(F.max_pool2d(self.conv4_occ_branch(occ_branch), 2))
+
+        # put em together!
+        concatenated = torch.cat([rgb_branch, occ_branch], dim=1)
+        flattened = torch.flatten(concatenated, start_dim=1)
+        flattened = F.relu(self.fcn_1(flattened))
+        flattened = F.relu(self.fcn_2(flattened))
+        flattened = F.relu(self.fcn_3(flattened))
+        flattened = F.relu(self.fcn_4(flattened))
+
+        flattened = torch.reshape(flattened, (flattened.shape[0], self.n_prims, self.rollout))
+
+        return flattened

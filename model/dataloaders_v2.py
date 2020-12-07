@@ -9,6 +9,7 @@ import sys
 import pickle
 
 sys.path.append("/home/ian/catkin/cis700_ws/src/rosbag-dl-utils")
+sys.path.append("/home/adarsh/ros-workspaces/cis700_workspace/src/rosbag-dl-utils")
 
 from base_data_loader import BaseDataset
 
