@@ -19,7 +19,7 @@ import os
 # eventually we can do sweeps with this setup
 hyperparameter_defaults = dict(
     batch_size=48,
-    learning_rate=0.0005,
+    learning_rate=0.001,
     weight_decay=0.0005,
     epochs=20,
     test_iters=50,
@@ -32,12 +32,12 @@ hyperparameter_defaults = dict(
     samples_per_second=4,
     pickle_batches=False,
     primitives=True,
-    rollout=5,
+    rollout=3,
     n_primitives=25
 )
 
 dt = datetime.now().strftime("%m_%d_%H_%M")
-name_str = "_prim_take_1"
+name_str = "_prim_weighted_rollout_bce"
 wandb.init(project="cis700", config=hyperparameter_defaults, name=dt + name_str)
 config = wandb.config
 
@@ -110,19 +110,11 @@ def best_of_many_weighted_bce(output, target, valid, weight_val=config.weight_va
     return torch.min(sums)
 
 
+cel = nn.CrossEntropyLoss()
 def prim_bce(output, target, rollout=config.rollout, weight_val=config.weight_val):
-    cel = nn.CrossEntropyLoss()
-
     loss = 0
     for i in range(rollout):
-        # print(output.shape)
-        # print(output[:, :, i])
-        # print(target.shape)
-        # print(target[:, i])
-        # print(output[:, :, i])
-        # print(target[:, i])
-        l = cel(output[:, :, i].float(), target[:, i].long())
-        loss += l
+        loss += weight_val * (i / rollout) * cel(output[:, :, i].float(), target[:, i].long())
 
     return loss
 
@@ -217,13 +209,13 @@ if config.loaders_from_scratch:
             try:
                 train_loaders.append(DataLoader(
                     CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
-                                  map_size=config.map_size),
+                                  map_size=config.map_size, rollout=config.rollout),
                     batch_size=config.batch_size,
                     num_workers=config.num_workers, shuffle=True))
             except ValueError:
                 train_loaders.append(DataLoader(
                     CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
-                                  map_size=config.map_size),
+                                  map_size=config.map_size, rollout=config.rollout),
                     batch_size=config.batch_size,
                     num_workers=config.num_workers, shuffle=True))
             # pickle.dump(train_loaders, open("train_loaders.pkl", 'wb'))
@@ -234,12 +226,12 @@ if config.loaders_from_scratch:
         try:
             test_loaders.append(DataLoader(
                 CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
-                              map_size=config.map_size),
+                              map_size=config.map_size, rollout=config.rollout),
                 batch_size=1, shuffle=False))
         except ValueError:
             test_loaders.append(DataLoader(
                 CIS700Dataset(config_file, sdir, samples_per_second=config.samples_per_second,
-                              map_size=config.map_size),
+                              map_size=config.map_size, rollout=config.rollout),
                 batch_size=1, shuffle=False))
 
         # pickle.dump(test_loaders, open("test_loaders.pkl", 'wb'))

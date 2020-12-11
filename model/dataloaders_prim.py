@@ -18,11 +18,12 @@ from base_data_loader import BaseDataset
 class CIS700Dataset(BaseDataset):
 
     def __init__(self, config_file, sub_dir, map_size=30, samples_per_second=120, skip_last_n_seconds=0,
-                 skip_first_n_seconds=0):
+                 skip_first_n_seconds=0, rollout=5):
 
         super().__init__(config_file, sub_dir, samples_per_second=samples_per_second,
                          skip_last_n_seconds=skip_last_n_seconds, skip_first_n_seconds=skip_first_n_seconds)
         self.map_size = map_size
+        self.rollout = rollout
 
     def process_map(self, map_arr, verbose=False):
         map_meta = {"origin_position_x": map_arr[-10],
@@ -196,10 +197,10 @@ class CIS700Dataset(BaseDataset):
 
         # grab and pad indices
         mps = np.array(vals["ground_truth_planning_mp_indices_list"])
-        if len(mps) > 5:
-            mps = mps[:5]
-        elif len(mps) < 5:
-            mps = np.pad(mps, (0, 5-mps.shape[0], ))
+        if len(mps) > self.rollout:
+            mps = mps[:self.rollout]
+        elif len(mps) < self.rollout:
+            mps = np.pad(mps, (0, self.rollout - mps.shape[0], ))
 
         # print(mps)
 
